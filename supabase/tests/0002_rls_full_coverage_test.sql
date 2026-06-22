@@ -7,7 +7,7 @@
 begin;
 create schema if not exists tests;
 grant usage on schema tests to public;
-select plan(51);
+select plan(50);
 
 -- Seeded identifiers (see supabase/seed/seed.sql).
 \set A '11111111-1111-1111-1111-111111111111'
