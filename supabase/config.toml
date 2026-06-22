@@ -30,3 +30,7 @@ max_enrolled_factors = 10
 [storage]
 enabled = true
 file_size_limit = "50MiB"
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed/seed.sql"]

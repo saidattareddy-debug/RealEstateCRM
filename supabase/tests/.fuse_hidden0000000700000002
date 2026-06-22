@@ -6,7 +6,6 @@
 
 begin;
 create schema if not exists tests;
-grant usage on schema tests to public;
 select plan(51);
 
 -- Seeded identifiers (see supabase/seed/seed.sql).

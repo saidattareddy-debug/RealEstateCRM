@@ -5,7 +5,6 @@
 
 begin;
 create schema if not exists tests;
-grant usage on schema tests to public;
 select plan(8);
 
 -- Helper to simulate an authenticated request: set the JWT subject + active tenant.
