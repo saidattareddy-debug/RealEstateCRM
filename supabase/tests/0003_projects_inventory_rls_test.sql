@@ -58,8 +58,8 @@ select ok((select count(*) from inventory_status_events where tenant_id=:'A') >=
   'history: status events recorded by trigger');
 select ok((select count(*) from inventory_price_history where tenant_id=:'A') >= 3,
   'history: price history recorded by trigger');
-select is((with u as (update inventory_status_events set new_status='sold' where tenant_id=:'A' returning 1)
-  select count(*) from u)::int, 0, 'history: append-only (UPDATE 0 rows)');
+with u as (update inventory_status_events set new_status='sold' where tenant_id=:'A' returning 1)
+select is((select count(*) from u)::int, 0, 'history: append-only (UPDATE 0 rows)');
 
 -- imports permission
 select lives_ok($$insert into inventory_imports(tenant_id,project_id,filename)

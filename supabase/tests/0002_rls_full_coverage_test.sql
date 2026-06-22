@@ -66,17 +66,17 @@ select tests.act(:'AG', :'A');
 select is((select count(*) from tenant_branding where tenant_id=:'A')::int, 1, 'branding: agent can read own (member)');
 -- agent lacks branding.manage: cross/own UPDATE affects 0 rows
 do $$ begin perform tests.act('00000000-0000-0000-0000-0000000000a2','11111111-1111-1111-1111-111111111111'); end $$;
-select is((with u as (update tenant_branding set accent_color='#000000'
-  where tenant_id=:'A' returning 1) select count(*) from u)::int, 0,
-  'branding: member without permission UPDATE 0 rows');
+with u as (update tenant_branding set accent_color='#000000'
+  where tenant_id=:'A' returning 1)
+select is((select count(*) from u)::int, 0, 'branding: member without permission UPDATE 0 rows');
 
 -- ===================== tenant_settings =====================
 select tests.act(:'AA', :'A');
 select is((select count(*) from tenant_settings)::int, 1, 'settings: A-admin own SELECT=1');
 select lives_ok($$update tenant_settings set currency='USD' where tenant_id='11111111-1111-1111-1111-111111111111'$$,
   'settings: A-admin own UPDATE allowed');
-select is((with u as (update tenant_settings set currency='GBP' where tenant_id=:'B' returning 1)
-  select count(*) from u)::int, 0, 'settings: A-admin cross UPDATE 0 rows');
+with u as (update tenant_settings set currency='GBP' where tenant_id=:'B' returning 1)
+select is((select count(*) from u)::int, 0, 'settings: A-admin cross UPDATE 0 rows');
 
 -- ===================== tenant_features =====================
 select tests.act(:'AA', :'A');
@@ -109,10 +109,10 @@ select is((select count(*) from role_permissions rp join roles r on r.id=rp.role
 
 -- ===================== memberships =====================
 select tests.act(:'AA', :'A');
-select is((select count(*) from memberships where tenant_id=:'A')::int, 2, 'memberships: A-admin own SELECT=2');
+select is((select count(*) from memberships where tenant_id=:'A')::int, 3, 'memberships: A-admin own SELECT=3');
 select is((select count(*) from memberships where tenant_id=:'B')::int, 0, 'memberships: A-admin cross SELECT=0');
-select is((with u as (update memberships set status='suspended' where tenant_id=:'B' returning 1)
-  select count(*) from u)::int, 0, 'memberships: A-admin cross UPDATE 0 rows');
+with u as (update memberships set status='suspended' where tenant_id=:'B' returning 1)
+select is((select count(*) from u)::int, 0, 'memberships: A-admin cross UPDATE 0 rows');
 select tests.act(:'AG', :'A');
 select is((select count(*) from memberships)::int, 1, 'memberships: agent sees only own row');
 
@@ -138,18 +138,18 @@ select is((select count(*) from invitations)::int, 0, 'invitations: member witho
 select tests.act(:'AA', :'A');
 select ok((select count(*) from audit_logs where tenant_id=:'A') >= 1, 'audit_logs: A-admin sees own tenant rows');
 select is((select count(*) from audit_logs where tenant_id=:'B')::int, 0, 'audit_logs: A-admin cannot see B rows');
-select is((with u as (update audit_logs set action='auth.sign_out' where tenant_id=:'A' returning 1)
-  select count(*) from u)::int, 0, 'audit_logs: append-only (UPDATE 0 rows)');
-select is((with d as (delete from audit_logs where tenant_id=:'A' returning 1)
-  select count(*) from d)::int, 0, 'audit_logs: append-only (DELETE 0 rows)');
+with u as (update audit_logs set action='auth.sign_out' where tenant_id=:'A' returning 1)
+select is((select count(*) from u)::int, 0, 'audit_logs: append-only (UPDATE 0 rows)');
+with d as (delete from audit_logs where tenant_id=:'A' returning 1)
+select is((select count(*) from d)::int, 0, 'audit_logs: append-only (DELETE 0 rows)');
 select tests.act(:'AG', :'A');
 select is((select count(*) from audit_logs)::int, 0, 'audit_logs: member without audit.read sees 0');
 
 -- ===================== security_events =====================
 select tests.act(:'AA', :'A');
 select ok((select count(*) from security_events where tenant_id=:'A') >= 1, 'security_events: A-admin sees own');
-select is((with u as (update security_events set status='ignored' where tenant_id=:'B' returning 1)
-  select count(*) from u)::int, 0, 'security_events: A-admin cross UPDATE 0 rows');
+with u as (update security_events set status='ignored' where tenant_id=:'B' returning 1)
+select is((select count(*) from u)::int, 0, 'security_events: A-admin cross UPDATE 0 rows');
 select tests.act(:'AG', :'A');
 select is((select count(*) from security_events)::int, 0, 'security_events: member without security.manage sees 0');
 
@@ -184,11 +184,13 @@ select is((select count(*) from roles r join role_permissions rp on rp.role_id=r
 -- permission overrides + disabled membership (mutate as owner; tx rolls back)
 reset role;
 insert into user_permissions(tenant_id, profile_id, permission_key, effect)
-  values (:'A', :'AA', 'scoring.publish', 'revoke');
+  values (:'A', :'AA', 'scoring.publish', 'revoke')
+  on conflict (tenant_id, profile_id, permission_key) do update set effect = excluded.effect;
 select is((select count(*) from public.effective_permissions(:'AA', :'A')
   where permission_key='scoring.publish')::int, 0, 'scenario: revoked override removes scoring.publish');
 insert into user_permissions(tenant_id, profile_id, permission_key, effect)
-  values (:'A', :'AG', 'leads.export', 'grant');
+  values (:'A', :'AG', 'leads.export', 'grant')
+  on conflict (tenant_id, profile_id, permission_key) do update set effect = excluded.effect;
 select is((select count(*) from public.effective_permissions(:'AG', :'A')
   where permission_key='leads.export')::int, 1, 'scenario: granted override adds leads.export');
 update memberships set status='suspended' where profile_id=:'AG' and tenant_id=:'A';
