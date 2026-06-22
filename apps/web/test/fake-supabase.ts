@@ -37,6 +37,8 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
   private payload: Row | null = null;
   private filters: Array<[string, unknown]> = [];
   private isFilters: Array<[string, unknown]> = [];
+  private inFilters: Array<[string, unknown[]]> = [];
+  private notNullCols: string[] = [];
   private orderSpec: { col: string; ascending: boolean } | null = null;
   private limitN: number | null = null;
   private wantSingle = false;
@@ -47,9 +49,9 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
     private table: string,
   ) {}
 
-  insert(obj: Row) {
+  insert(obj: Row | Row[]) {
     this.op = 'insert';
-    this.payload = obj;
+    this.payload = obj as Row;
     return this;
   }
   update(obj: Row) {
@@ -68,6 +70,16 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
   /** `.is(col, null)` — NULL-aware equality (null and undefined are equal). */
   is(col: string, val: unknown) {
     this.isFilters.push([col, val]);
+    return this;
+  }
+  /** `.in(col, [a,b])` — membership filter. */
+  in(col: string, vals: unknown[]) {
+    this.inFilters.push([col, vals]);
+    return this;
+  }
+  /** Supports `.not(col, 'is', null)` → keep rows where col is not null. */
+  not(col: string, op: string, val: unknown) {
+    if (op === 'is' && val === null) this.notNullCols.push(col);
     return this;
   }
   order(col: string, opts?: { ascending?: boolean }) {
@@ -92,7 +104,9 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
       (r) =>
         this.filters.every(([c, v]) => r[c] === v) &&
         // NULL-aware: `.is(col, null)` matches null AND undefined.
-        this.isFilters.every(([c, v]) => (r[c] ?? null) === (v ?? null)),
+        this.isFilters.every(([c, v]) => (r[c] ?? null) === (v ?? null)) &&
+        this.inFilters.every(([c, vals]) => vals.includes(r[c])) &&
+        this.notNullCols.every((c) => (r[c] ?? null) !== null),
     );
     if (this.orderSpec) {
       const { col, ascending } = this.orderSpec;
@@ -109,12 +123,19 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
 
   private run(): Promise<{ data: unknown; error: unknown }> {
     if (this.op === 'insert' && this.payload) {
-      if (conflict(this.db, this.table, this.payload)) {
-        return Promise.resolve({ data: null, error: { code: '23505' } });
+      // Support both a single row and a batch (array) insert.
+      const batch: Row[] = Array.isArray(this.payload) ? (this.payload as Row[]) : [this.payload];
+      const inserted: Row[] = [];
+      for (const item of batch) {
+        if (conflict(this.db, this.table, item)) {
+          return Promise.resolve({ data: null, error: { code: '23505' } });
+        }
+        const row: Row = { id: `id_${idSeq++}`, ...item };
+        (this.db.tables[this.table] ??= []).push(row);
+        inserted.push(row);
       }
-      const row: Row = { id: `id_${idSeq++}`, ...this.payload };
-      (this.db.tables[this.table] ??= []).push(row);
-      return Promise.resolve({ data: { id: row.id, ...row }, error: null });
+      const data = Array.isArray(this.payload) ? inserted : (inserted[0] ?? null);
+      return Promise.resolve({ data, error: null });
     }
     if (this.op === 'update' && this.payload) {
       for (const r of this.rows()) Object.assign(r, this.payload);

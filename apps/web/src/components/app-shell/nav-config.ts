@@ -40,6 +40,21 @@ export const PRIMARY_NAV: NavItem[] = [
 
 /** Administration — tenant configuration and oversight surfaces. */
 export const ADMIN_NAV: NavItem[] = [
+  { label: 'Analytics', href: '/analytics', icon: 'analytics', requires: 'analytics.sales.read' },
+  {
+    label: 'Usage & billing',
+    href: '/settings/usage',
+    icon: 'billing',
+    requires: 'billing.read',
+  },
+  {
+    label: 'System health',
+    href: '/admin/system-health',
+    icon: 'health',
+    requires: 'system.health.read',
+  },
+  { label: 'Automations', href: '/automations', icon: 'automations', requires: 'automations.read' },
+  { label: 'Visits', href: '/visits', icon: 'visits', requires: 'sitevisits.read' },
   { label: 'Team', href: '/team', icon: 'team', requires: 'team.performance.read' },
   { label: 'Scoring', href: '/settings/scoring', icon: 'scoring', requires: 'scoring.models.read' },
   {

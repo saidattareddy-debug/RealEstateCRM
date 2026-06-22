@@ -909,6 +909,110 @@ export const AUDIT_ACTIONS = {
     description: 'AI usage limit reached',
     security: true,
   },
+  // Phase 8 — Automations & Visits
+  AUTOMATION_CREATED: {
+    key: 'automation.created',
+    category: 'configuration',
+    description: 'Automation created',
+    security: true,
+  },
+  AUTOMATION_UPDATED: {
+    key: 'automation.updated',
+    category: 'configuration',
+    description: 'Automation updated',
+    security: true,
+  },
+  AUTOMATION_RUN: {
+    key: 'automation.run',
+    category: 'configuration',
+    description: 'Automation evaluated for an event',
+    security: false,
+  },
+  AUTOMATION_ACTION_EXECUTED: {
+    key: 'automation.action_executed',
+    category: 'configuration',
+    description: 'Automation internal action executed',
+    security: false,
+  },
+  AUTOMATION_ACTION_SUPPRESSED: {
+    key: 'automation.action_suppressed',
+    category: 'configuration',
+    description: 'Automation customer-send action suppressed (not sent)',
+    security: false,
+  },
+  FOLLOWUP_SEQUENCE_UPDATED: {
+    key: 'followup.sequence.updated',
+    category: 'configuration',
+    description: 'Follow-up sequence updated',
+    security: true,
+  },
+  FOLLOWUP_ENROLLED: {
+    key: 'followup.enrolled',
+    category: 'configuration',
+    description: 'Lead enrolled in a follow-up sequence',
+    security: false,
+  },
+  FOLLOWUP_UNENROLLED: {
+    key: 'followup.unenrolled',
+    category: 'configuration',
+    description: 'Lead unenrolled / sequence stopped',
+    security: false,
+  },
+  FOLLOWUP_STEP_SUPPRESSED: {
+    key: 'followup.step.suppressed',
+    category: 'configuration',
+    description: 'Follow-up step recorded as suppressed (not sent)',
+    security: false,
+  },
+  VISIT_SCHEDULED: {
+    key: 'visit.scheduled',
+    category: 'configuration',
+    description: 'Site visit scheduled',
+    security: false,
+  },
+  VISIT_TRANSITIONED: {
+    key: 'visit.transitioned',
+    category: 'configuration',
+    description: 'Site visit state transitioned',
+    security: false,
+  },
+  VISIT_OUTCOME_RECORDED: {
+    key: 'visit.outcome_recorded',
+    category: 'configuration',
+    description: 'Site visit outcome recorded',
+    security: false,
+  },
+  NOTIFICATION_CREATED: {
+    key: 'notification.created',
+    category: 'configuration',
+    description: 'Notification created',
+    security: false,
+  },
+  // Phase 9 — Analytics & Administration
+  USAGE_RECORDED: {
+    key: 'usage.recorded',
+    category: 'configuration',
+    description: 'Usage counter recorded',
+    security: false,
+  },
+  BILLING_PERIOD_UPDATED: {
+    key: 'billing.period.updated',
+    category: 'configuration',
+    description: 'Billing period updated',
+    security: true,
+  },
+  ANALYTICS_EXPORTED: {
+    key: 'analytics.exported',
+    category: 'data_export',
+    description: 'Analytics/report exported',
+    security: true,
+  },
+  SYSTEM_HEALTH_RECORDED: {
+    key: 'system.health.recorded',
+    category: 'configuration',
+    description: 'System health snapshot recorded',
+    security: false,
+  },
 } as const satisfies Record<string, AuditActionDef>;
 
 export type AuditActionName = keyof typeof AUDIT_ACTIONS;

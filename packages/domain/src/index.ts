@@ -31,3 +31,8 @@ export * from './matching';
 export * from './integrations';
 export * from './integration-activation';
 export * from './ai-live-activation';
+export * from './automation';
+export * from './followup';
+export * from './visits';
+export * from './notifications';
+export * from './analytics';

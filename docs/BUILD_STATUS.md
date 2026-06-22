@@ -6,38 +6,141 @@ Living record of build progress. Updated at the end of every phase (and at meani
 
 ## Current state
 
-|                  |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Active phase** | Phase 7A — External Sources & Channel Integration Foundation (mock / simulation / record-only; no external IO)                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| **Status**       | Core CRM — Deployable for Controlled MVP / Phase 7A — Locally Complete and Simulated / Phase 7B — Ready for External Provider Review / Public Provider Webhooks — Disabled by Default / Live WhatsApp/Email — Not Connected / Automatic Customer Sending — Impossible                                                                                                                                                                                                                                                                                                              |
-| **Date**         | 2026-06-20                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| **Next phase**   | Phase 7B — Live Provider Activation (**go-live prep landed; NOT activated**). Operator-facing prerequisites, the runtime activation flag (default OFF), a pure activation-decision engine that can never activate, and a full go-live runbook are now in the repo ([`PHASE_7B_GO_LIVE.md`](./PHASE_7B_GO_LIVE.md)). Actual activation still requires external credentials/accounts, verified webhook domains, provider review, paid + compliance approval, the real network adapters (a separate engineering PR), and live Supabase + production queues/monitoring. Not activated. |
-| **Gates**        | format ✅ · lint 0-err ✅ · typecheck ✅ · 341 unit ✅ · 16 web-server ✅ · **32 embedded-PG (real service: message + lead + human-send + callback + replay executor) ✅** · harness 349/349 ✅ · migration-order 26 ✅ · secret-scan (expanded) ✅ · no-external-IO static+runtime ✅ · e2e compile ✅ · build ✅ (0001–0026)                                                                                                                                                                                                                                                     |
+|                  |                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Active phase** | Phase 10 — Hardening (complete, local). Phases 0–10 are all locally complete & verified.                                                                                                                                                                                                                                                                                                                                                          |
+| **Status**       | Phases 0–10 — Locally Complete & Verified / Controlled-MVP Production — NO-GO Pending Hosted Staging / Phase 7B Live Providers — Not Activated (go-live prep landed) / Phase 5B.1 Live-Send — Not Activated (master switch frozen) / Automatic Customer Sending — Impossible                                                                                                                                                                      |
+| **Date**         | 2026-06-22                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| **Next phase**   | Hosted-staging verification (provisioning, backup/restore drill, hosted RLS, browser smoke, observability, perf baseline) — see [`CONTROLLED_MVP_DEPLOYMENT_AUDIT.md`](./CONTROLLED_MVP_DEPLOYMENT_AUDIT.md). Then, when chosen and approved, the external go-live paths: [`PHASE_7B_GO_LIVE.md`](./PHASE_7B_GO_LIVE.md) and [`PHASE_5B1_GO_LIVE.md`](./PHASE_5B1_GO_LIVE.md). §35 mapping in [`DEFINITION_OF_DONE.md`](./DEFINITION_OF_DONE.md). |
+| **Gates**        | format ✅ · lint 0-err ✅ · typecheck ✅ · **413 unit** ✅ · **56 web-server** ✅ · **RLS harness 349/349** ✅ + **pg-phase8 9/9** + **pg-phase9 6/6** ✅ · migrations 0001–0030 ✅ · secret-scan (expanded) ✅ · no-external-IO static+runtime ✅ · e2e compile ✅                                                                                                                                                                               |
 
 **Controlled-MVP deployment readiness:** see [`CONTROLLED_MVP_DEPLOYMENT_AUDIT.md`](./CONTROLLED_MVP_DEPLOYMENT_AUDIT.md). All locally-verifiable gates pass and production env-validation now fails startup on incomplete prod config; the go/no-go decision is **NO-GO — pending hosted staging** (provisioning, backup/restore drill, hosted RLS, end-to-end browser smoke, observability, performance baseline cannot be executed in this build environment). "Production Controlled MVP Approved" is withheld until staging verification passes with a named approver. A repeatable **hosted-staging execution pack** is now in the repo: [`HOSTED_STAGING_RUNBOOK.md`](./HOSTED_STAGING_RUNBOOK.md), [`ENVIRONMENT_MATRIX.md`](./ENVIRONMENT_MATRIX.md), [`HOSTED_RLS_VERIFICATION.md`](./HOSTED_RLS_VERIFICATION.md), [`CONTROLLED_MVP_SMOKE_TEST.md`](./CONTROLLED_MVP_SMOKE_TEST.md), [`BACKUP_RESTORE_DRILL.md`](./BACKUP_RESTORE_DRILL.md), [`PERFORMANCE_BASELINE.md`](./PERFORMANCE_BASELINE.md), staging-safe scripts (`db:staging:preflight`, `db:production:preflight`, `hosted:rls`, `perf:baseline`), a `/api/health` endpoint, log-redaction helpers, and a compilable Playwright skeleton (`test:e2e:compile`).
 
 ## Phase tracker
 
-| Phase | Title                                                                            | Status                                                                                      |
-| ----- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| 0     | Architecture & documentation                                                     | ✅ Complete                                                                                 |
-| 1     | Foundation (repo, app, design system, auth, tenancy, RLS, shell)                 | ✅ Complete                                                                                 |
-| 1.1   | Foundation Hardening (audit logging, full RLS tests, states, mobile nav, CI)     | ✅ Complete                                                                                 |
-| 2     | Projects & inventory                                                             | ✅ Complete                                                                                 |
-| 3     | Lead CRM (ingestion, dedupe, pipeline, assignment)                               | ✅ Complete                                                                                 |
-| 3.1   | CRM Conversation Readiness (idempotency, durable jobs, calls, qual, exports)     | ✅ Complete                                                                                 |
-| 4     | Conversations (inbox, widget, takeover, summaries, consent/DNC)                  | ✅ Complete                                                                                 |
-| 4.1   | AI Safety & Inbox Completion (guard, lifecycle, history, notes, consent)         | ✅ Complete (local)                                                                         |
-| 5A    | Knowledge, RAG & AI Safety Foundation (providers, grounding, escalation, eval)   | ✅ Complete (local)                                                                         |
-| 5B.0  | Record-Only Responder (live-send safety core, runtime/outbox schema, activation) | ✅ Complete (local, record-only)                                                            |
-| 5B.1  | Controlled Live-Send Activation                                                  | 🟡 Go-live prep landed (governance + UI; switch OFF); activation requires external approval |
-| 6A    | Deterministic Lead Scoring (versioned, explainable, advisory)                    | ✅ Core complete (local; approved UI deferral)                                              |
-| 6B    | Project Matching (deterministic, inventory-aware, advisory)                      | ✅ Complete (local, advisory)                                                               |
-| 7A    | External Sources & Channel Integration Foundation (mock/simulation/record-only)  | ✅ Locally complete & simulated (controlled MVP)                                            |
-| 7B    | Live Provider Activation                                                         | ⬜ Ready for review; external approval required                                             |
-| 8     | Automations & visits                                                             | ⬜ Not started                                                                              |
-| 9     | Analytics & administration                                                       | ⬜ Not started                                                                              |
-| 10    | Hardening                                                                        | ⬜ Not started                                                                              |
+| Phase | Title                                                                            | Status                                                                                                         |
+| ----- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| 0     | Architecture & documentation                                                     | ✅ Complete                                                                                                    |
+| 1     | Foundation (repo, app, design system, auth, tenancy, RLS, shell)                 | ✅ Complete                                                                                                    |
+| 1.1   | Foundation Hardening (audit logging, full RLS tests, states, mobile nav, CI)     | ✅ Complete                                                                                                    |
+| 2     | Projects & inventory                                                             | ✅ Complete                                                                                                    |
+| 3     | Lead CRM (ingestion, dedupe, pipeline, assignment)                               | ✅ Complete                                                                                                    |
+| 3.1   | CRM Conversation Readiness (idempotency, durable jobs, calls, qual, exports)     | ✅ Complete                                                                                                    |
+| 4     | Conversations (inbox, widget, takeover, summaries, consent/DNC)                  | ✅ Complete                                                                                                    |
+| 4.1   | AI Safety & Inbox Completion (guard, lifecycle, history, notes, consent)         | ✅ Complete (local)                                                                                            |
+| 5A    | Knowledge, RAG & AI Safety Foundation (providers, grounding, escalation, eval)   | ✅ Complete (local)                                                                                            |
+| 5B.0  | Record-Only Responder (live-send safety core, runtime/outbox schema, activation) | ✅ Complete (local, record-only)                                                                               |
+| 5B.1  | Controlled Live-Send Activation                                                  | 🟡 Go-live prep landed (governance + UI; switch OFF); activation requires external approval                    |
+| 6A    | Deterministic Lead Scoring (versioned, explainable, advisory)                    | ✅ Core complete (local; approved UI deferral)                                                                 |
+| 6B    | Project Matching (deterministic, inventory-aware, advisory)                      | ✅ Complete (local, advisory)                                                                                  |
+| 7A    | External Sources & Channel Integration Foundation (mock/simulation/record-only)  | ✅ Locally complete & simulated (controlled MVP)                                                               |
+| 7B    | Live Provider Activation                                                         | ⬜ Ready for review; external approval required                                                                |
+| 8     | Automations & visits                                                             | ✅ Locally complete & verified (automations, follow-ups, visits, calendar-sim, notifications; no live send)    |
+| 9     | Analytics & administration                                                       | ✅ Locally complete & verified (real-data dashboards, usage/billing, team perf, system health, logged exports) |
+| 10    | Hardening (RLS sweep, security review, a11y, perf, §35 DoD)                      | ✅ Locally complete & verified (NO-GO pending hosted staging)                                                  |
+
+## Phase 10 — Hardening (2026-06-22, build complete locally)
+
+End-of-build hardening: a full RLS sweep, a consolidated security review, an
+accessibility pass, performance notes, monitoring confirmation, deployment-runbook
+completion, and the §35 Definition-of-Done mapping (30/30 met locally).
+
+- **Full RLS sweep** — `run.mjs` harness **349/349** across migrations 0001–0030,
+  plus `pg-phase8` (9/9) and `pg-phase9` (6/6). The sweep **caught a real
+  regression**: migrations 0029/0030 had rewritten `on_tenant_created()` from a
+  pre-6A base and dropped the 6A/6B/7A/demo provisioning — fixed in both so new
+  tenants are fully provisioned; harness restored to 349/349.
+- **Docs**: [`SECURITY_REVIEW.md`](./SECURITY_REVIEW.md),
+  [`ACCESSIBILITY.md`](./ACCESSIBILITY.md), [`PERFORMANCE.md`](./PERFORMANCE.md),
+  [`DEFINITION_OF_DONE.md`](./DEFINITION_OF_DONE.md), [`PHASE_10_AUDIT.md`](./PHASE_10_AUDIT.md).
+- **Monitoring**: `/api/health`; production env validator requires `SENTRY_DSN`;
+  log-redaction helpers.
+
+**Definition of Done:** all 30 §35 criteria met locally; six are met up to a
+documented external stop-condition (AI auto-answer, follow-up delivery, calendar
+sync, live cost tracking, backup/restore execution, live deployment) — all gated by
+hosted staging / 7B / 5B.1.
+
+**Gates (final):** format ✅ · lint 0-err ✅ · typecheck ✅ · 413 unit ✅ · 56 web ✅ ·
+RLS harness 349/349 + pg-phase8 9/9 + pg-phase9 6/6 ✅ · migrations 0001–0030 ✅ ·
+secret-scan ✅ · no-external-IO ✅. Safety switches frozen.
+
+## Phase 9 — Analytics & Administration (2026-06-22, real data)
+
+Real-data dashboards/reports, usage/billing tracking, team performance, an admin
+system-health view, and a logged-export ledger. Funnel/source/team metrics are
+computed **on the fly** from the existing RLS-scoped tables via pure `@re/domain`
+reducers — no fabricated numbers; every loader is defensive.
+
+- **Domain** (`packages/domain/src/analytics.ts`, pure): `computeFunnel`,
+  `computeSourcePerformance` (costs `null` when spend unknown), `computeTeamPerformance`,
+  `computeUsage`/`anyOverLimit`, `rollupHealth` (worst-state). +7 unit tests.
+- **Migration 0030** (`analytics_admin.sql`, forward-only): 4 tenant-scoped RLS
+  tables — `usage_counters`, `billing_periods` (plan/status/amount CHECKs),
+  `system_health_checks` (tenant + platform-null rows), `analytics_export_logs`
+  (egress ledger). 2 new perms (`system.health.read`, `analytics.export`), 4 audit
+  actions, per-tenant grants. (analytics._/billing._ already exist via 0014.)
+- **Server** (`apps/web/src/lib/analytics/`): `queries.ts` (RLS-scoped aggregate
+  loaders feeding the reducers), `export-service.ts` (logged + injection-safe CSV),
+  `billing-service.ts` (billing.manage-gated upsert).
+- **UI**: `/analytics` (KPIs, funnel, sources, Export CSV), `/analytics/team`,
+  `/settings/usage` (limits + billing), `/admin/system-health`, `/analytics/export`
+  — permission-gated, force-dynamic, mobile, empty/error states. Analytics + Usage
+  - System-health added to the nav.
+- **Docs**: [`ANALYTICS_AND_ADMIN.md`](./ANALYTICS_AND_ADMIN.md) +
+  [`PHASE_9_AUDIT.md`](./PHASE_9_AUDIT.md).
+
+**Gates:** format ✅ · lint 0-err ✅ · typecheck ✅ · **413 unit** ✅ · **56 web** ✅ ·
+**pg-phase9 harness 6/6** ✅ (RLS on all 4 tables, CHECKs, cross-tenant isolation,
+billing.manage gating) · migrations 0001–0030 ✅ · secret-scan ✅ · no-external-IO ✅.
+All four safety switches frozen.
+
+**Deferred (TECH_DEBT):** background usage-metering + billing-close PGMQ workers;
+live provider health probes (credentials + IO); time-series/cohort charts; live
+AI/WhatsApp cost tracking.
+
+## Phase 8 — Automations & Visits (2026-06-22, no live send)
+
+The explicitly-approved automation phase. Workflow automations, score-aware
+follow-up sequences (every stop condition + "why sent" provenance), the site-visit
+lifecycle with double-booking prevention, a **simulation-only** calendar, and
+notifications. **Automatic customer sending remains impossible** — automation
+customer-send actions and follow-up step sends are recorded with
+`will_send = false` (DB CHECK forbids `true`); internal mutations
+(stage/assignment/task/tag/note/notify/enroll) execute for real.
+
+- **Domain** (`packages/domain/src/{automation,followup,visits,notifications}.ts`,
+  pure): `evaluateAutomation` (triggers/condition-groups/12 operators, send actions
+  flagged willSend:false); `decideFollowUpStep` (9 stop reasons, quiet-hours defer,
+  score-gating, why_sent); visit 8-state machine + `detectDoubleBooking`;
+  `routeNotification` + dedupe. +40 unit tests.
+- **Migration 0029** (`automations_visits.sql`, forward-only): 16 tenant-scoped RLS
+  tables across automations (+runs/run_actions with `will_send=false` CHECK),
+  follow-up sequences/steps/enrollments/step_events (`will_send=false` CHECK,
+  one-active-enrollment partial unique), site_visits/events/outcomes,
+  calendar_connections (status CHECK ≠ connected) + busy_blocks, notifications/
+  preferences/deliveries (external must be simulated). Reuses existing
+  `sitevisits.*`/`automations.manage` perms + adds `automations.read`/`followups.*`/
+  `notifications.*`; 13 audit actions; per-tenant grants.
+- **Server** (`apps/web/src/lib/{automations,followups,visits,notifications}/`):
+  automation runner (suppresses customer-send, executes internal), follow-up
+  tick (suppressed sends + enrollment advance/stop), visit scheduling (double-booking
+  rejected) + lifecycle + outcomes, notification routing (external simulated). All
+  permission-gated + audited.
+- **UI**: `/automations` (+`/[id]`), `/automations/sequences` (+`/[id]`), `/visits`,
+  `/notifications`, `/settings/notifications` — mobile-responsive, empty/error
+  states, no placeholders; Automations + Visits added to the nav.
+- **Docs**: [`AUTOMATIONS_AND_VISITS.md`](./AUTOMATIONS_AND_VISITS.md) +
+  [`PHASE_8_AUDIT.md`](./PHASE_8_AUDIT.md).
+
+**Gates:** format ✅ · lint 0-err ✅ · typecheck ✅ · **406 unit** ✅ · **56 web** ✅ ·
+**pg-phase8 harness 9/9** ✅ (RLS on all 16 tables, `will_send`/calendar/delivery
+CHECKs, cross-tenant isolation, permission gating) · migrations 0001–0029 ✅ ·
+secret-scan ✅ · no-external-IO ✅. All four safety switches frozen.
+
+**Deferred (TECH_DEBT):** live Google/Outlook calendar sync; real email/push +
+WhatsApp/email follow-up delivery (Phase 7B/5B.1 + credentials); production PGMQ
+ticking workers; agent-scoped RLS for visits/automations.
 
 ## Phase 5B.1 — Controlled Live-Send Activation: Go-Live Preparation (nothing sends, 2026-06-22)
 

@@ -82,6 +82,8 @@ try {
     '0026_callback_idempotency.sql',
     '0027_role_grants.sql',
     '0028_demo_seed_runs.sql',
+    '0029_automations_visits.sql',
+    '0030_analytics_admin.sql',
   ]) {
     let s = readFileSync(`${MIG}/${f}`, 'utf8');
     if (f === '0001_extensions.sql')

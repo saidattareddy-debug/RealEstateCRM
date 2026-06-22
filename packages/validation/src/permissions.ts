@@ -144,7 +144,12 @@ export const PERMISSION_KEYS = [
   'scoring.edit',
   'scoring.approve',
   'scoring.publish',
+  'automations.read',
   'automations.manage',
+  'followups.read',
+  'followups.manage',
+  'notifications.read',
+  'notifications.manage',
   'assignment.configure',
   // Marketing
   'campaigns.manage',
@@ -157,6 +162,8 @@ export const PERMISSION_KEYS = [
   'analytics.agents.read',
   'analytics.ai.read',
   'analytics.cost.read',
+  'analytics.export',
+  'system.health.read',
   // Billing
   'billing.read',
   'billing.manage',

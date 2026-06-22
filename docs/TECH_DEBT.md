@@ -3,6 +3,38 @@
 Tracked, intentional gaps and follow-ups. Each item names where it lives and what
 "done" looks like. Phase audits reference this file.
 
+## Phase 9 — Analytics & Administration (open, intentional)
+
+- **Background metering / billing-close workers** — `usage_counters` and
+  `billing_periods` are written by services on demand; done = PGMQ workers that
+  meter usage continuously and close/invoice periods on a schedule.
+- **Live provider health probes** — `system_health_checks` is fed deterministically
+  (no network IO); done = real probes against configured providers (credentials +
+  IO, a Phase-7B concern).
+- **Time-series / cohort analytics** — current dashboards show the present period;
+  done = historical trend + cohort charts (likely materialized rollups).
+- **Live cost tracking** — AI/WhatsApp spend is metered only when a live provider is
+  connected (5B.1/7B); until then `usage_counters` reflects synthetic/local usage.
+
+## Phase 8 — Automations & Visits (open, intentional)
+
+- **Live calendar sync** — `calendar_connections` is simulation-only
+  (`status ∈ disconnected|simulated`, no OAuth/tokens). Done = Google/Outlook OAuth
+  (a Phase-7B credential stop-condition) with read-only busy-block import feeding
+  `detectDoubleBooking`. No network IO until then.
+- **Real follow-up / notification delivery** — follow-up `send` steps and external
+  (email/push) notification deliveries are recorded **suppressed/simulated**
+  (`will_send=false`, `simulated=true`). Done = the 5B.1 master-switch flip + a live
+  channel (7B) + an idempotent PGMQ delivery worker. The DB CHECKs make a real send
+  unstorable until then.
+- **Scheduled ticking workers** — `runAutomationForEvent` and `tickEnrollment` run
+  synchronously via the durable-job abstraction (`SyncLocalDriver`). Done = a
+  production PGMQ worker that ticks due enrollments / time-schedule automations.
+- **Agent-scoped RLS for visits/automations** — current policies are tenant +
+  permission scoped (an agent with `sitevisits.read` sees the tenant's visits).
+  Done = per-agent visibility (e.g. `agent_id = auth.uid()` for the agent role),
+  mirroring the leads assignment-scope model.
+
 ## Phase 4.1 — closed 2026-06-19 (migration 0013 + wiring)
 
 - **Waiting-on** — DB trigger (`on_conversation_message`) persists `waiting_on`
