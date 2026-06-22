@@ -45,9 +45,8 @@ select lives_ok($$update inventory_units set status='reserved'
   where project_id='33333333-3333-3333-3333-333333333333' and unit_number='A-101'$$,
   'inventory: A-admin own status UPDATE allowed');
 select tests.act(:'AG', :'A');
-with u as (update inventory_units set status='blocked'
-  where project_id=:'PROJ' returning 1)
-select is((select count(*) from u)::int, 0,
+select is((with u as (update inventory_units set status='blocked'
+  where project_id=:'PROJ' returning 1) select count(*) from u)::int, 0,
   'inventory: agent without manage UPDATE 0 rows');
 select tests.act(:'BA', :'B');
 select is((select count(*) from inventory_units where tenant_id=:'A')::int, 0, 'inventory: B-admin cannot see A units');
