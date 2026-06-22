@@ -4,7 +4,6 @@
 -- critical rule that project_maintenance cannot read private conversations.
 
 begin;
-create schema if not exists tests;
 select plan(8);
 
 -- Helper to simulate an authenticated request: set the JWT subject + active tenant.

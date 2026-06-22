@@ -5,7 +5,6 @@
 -- embedded Postgres). No table is left "pattern-covered".
 
 begin;
-create schema if not exists tests;
 select plan(51);
 
 -- Seeded identifiers (see supabase/seed/seed.sql).

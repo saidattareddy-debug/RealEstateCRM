@@ -3,7 +3,6 @@
 -- Mirrors the Phase-2 block of supabase/tests/local-harness/run.mjs (75/75).
 
 begin;
-create schema if not exists tests;
 select plan(16);
 
 \set A '11111111-1111-1111-1111-111111111111'
