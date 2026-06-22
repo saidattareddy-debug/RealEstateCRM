@@ -19,6 +19,7 @@ import { runLeadScore } from '@/lib/scoring/score-service';
 import { runLeadMatch } from '@/lib/matching/match-service';
 import { ingestConversationMessage } from '@/lib/conversations/ingest-message';
 import { ingestKnowledge } from '@/lib/ai/ingestion';
+import { detectDoubleBooking } from '@re/domain';
 // The orchestrator + ledger are plain .mjs in scripts/demo.
 import { runSeed } from '../../../scripts/demo/seeder.mjs';
 import { runReset } from '../../../scripts/demo/reset.mjs';
@@ -335,6 +336,126 @@ describe('demo-data generator against EMBEDDED PostgreSQL', () => {
     expect(available).toBe(26);
   });
 
+  it('Phase 8 fixtures seeded with safety invariants (no real send)', async () => {
+    expect(res1Counts.automations).toBe(2);
+    expect(res1Counts.automation_actions).toBe(5);
+    expect(res1Counts.automation_runs).toBe(3);
+    expect(res1Counts.automation_run_actions).toBe(3);
+    expect(res1Counts.automation_suppressed_actions).toBe(1);
+    expect(res1Counts.followup_sequences).toBe(2);
+    expect(res1Counts.followup_enrollments).toBe(3);
+    expect(res1Counts.followup_step_events).toBe(6);
+    expect(res1Counts.site_visits).toBe(5);
+    expect(res1Counts.notifications).toBe(8);
+
+    // HEADLINE: not a single customer-send was (or could be) recorded as sent.
+    expect(await cnt(`select count(*) c from automation_run_actions where will_send=true`)).toBe(0);
+    expect(await cnt(`select count(*) c from followup_step_events where will_send=true`)).toBe(0);
+    // The suppressed customer-send action carries the master-switch reason.
+    expect(
+      await cnt(
+        `select count(*) c from automation_run_actions where category='customer_send' and status='suppressed' and suppressed_reason='live_send_master_switch_off'`,
+      ),
+    ).toBe(1);
+    // Enrollment stop reasons present (DNC + human response).
+    expect(
+      await cnt(
+        `select count(*) c from followup_enrollments where tenant_id=$1 and status='stopped' and stop_reason in ('dnc_active','human_takeover')`,
+        [SEED_TENANT_A],
+      ),
+    ).toBe(2);
+    // All five visit states present.
+    const states = (
+      await pool.query(
+        `select distinct state from site_visits s join demo_seed_entities e on e.entity_id=s.id::text where e.entity_type='site_visit'`,
+      )
+    ).rows.map((r) => r.state);
+    for (const st of ['requested', 'confirmed', 'rescheduled', 'completed', 'cancelled'])
+      expect(states).toContain(st);
+    // Calendar: NOT ONE connected (live) connection — all simulation-only.
+    expect(await cnt(`select count(*) c from calendar_connections where status='connected'`)).toBe(
+      0,
+    );
+    expect(
+      await cnt(
+        `select count(*) c from calendar_connections where tenant_id=$1 and status='simulated'`,
+        [SEED_TENANT_A],
+      ),
+    ).toBe(1);
+    // External (non in_app) notification deliveries are ALL simulated.
+    expect(
+      await cnt(
+        `select count(*) c from notification_deliveries where channel<>'in_app' and simulated=false`,
+      ),
+    ).toBe(0);
+
+    // Deterministic double-booking rejection: the seeded busy block at the
+    // confirmed visit's slot conflicts with a proposed overlapping window.
+    const block = (
+      await pool.query(
+        `select block_start, block_end from calendar_busy_blocks b join demo_seed_entities e on e.entity_id=b.id::text where e.entity_type='calendar_busy_block' and b.ref_id='busy_confirmed'`,
+      )
+    ).rows[0];
+    const start = new Date(block.block_start).getTime();
+    const proposed = {
+      start: new Date(start + 30 * 60_000).toISOString(), // overlaps by 30 min
+      end: new Date(start + 90 * 60_000).toISOString(),
+    };
+    const busy = (
+      await pool.query(
+        `select block_start, block_end, ref_id from calendar_busy_blocks b join demo_seed_entities e on e.entity_id=b.id::text where e.entity_type='calendar_busy_block'`,
+      )
+    ).rows.map((r) => ({
+      start: new Date(r.block_start).toISOString(),
+      end: new Date(r.block_end).toISOString(),
+      source: 'calendar' as const,
+      refId: r.ref_id,
+    }));
+    expect(detectDoubleBooking(proposed, busy).conflict).toBe(true);
+  });
+
+  it('Phase 9 fixtures seeded (usage below/near/at, billing, health, exports)', async () => {
+    expect(res1Counts.usage_counters).toBe(6);
+    expect(res1Counts.billing_periods).toBe(1);
+    expect(res1Counts.system_health_checks).toBe(8);
+    expect(res1Counts.analytics_export_logs).toBe(2);
+
+    // Northwind is the 'growth' tier: AI $500 / WhatsApp 50k / storage 50GB.
+    // below (ai_budget_usd=150) / near (whatsapp=42500 >= 80%) / at (storage=50).
+    const used = (metric: string) =>
+      cnt(`select coalesce(used,0) c from usage_counters where tenant_id=$1 and metric=$2`, [
+        SEED_TENANT_A,
+        metric,
+      ]);
+    expect(await used('ai_budget_usd')).toBe(150);
+    expect(await used('whatsapp_messages')).toBe(42500);
+    expect(await used('storage_gb')).toBe(50);
+
+    // Billing period: synthetic, no payment-provider record (amount_due 0, INR).
+    expect(
+      await cnt(
+        `select count(*) c from billing_periods where tenant_id=$1 and amount_due=0 and currency='INR'`,
+        [SEED_TENANT_A],
+      ),
+    ).toBe(1);
+    // Health: 2 platform-scope (null tenant) + tenant rows across all 3 states.
+    expect(
+      await cnt(
+        `select count(*) c from system_health_checks s join demo_seed_entities e on e.entity_id=s.id::text where s.tenant_id is null`,
+      ),
+    ).toBe(2);
+    const hStates = (
+      await pool.query(
+        `select distinct state from system_health_checks s join demo_seed_entities e on e.entity_id=s.id::text where e.entity_type='system_health_check'`,
+      )
+    ).rows.map((r) => r.state);
+    for (const st of ['healthy', 'degraded', 'down']) expect(hStates).toContain(st);
+    // Exports logged.
+    expect(
+      await cnt(`select count(*) c from analytics_export_logs where tenant_id=$1`, [SEED_TENANT_A]),
+    ).toBe(2);
+  });
+
   it('second seed is IDEMPOTENT — counts unchanged, no duplicates', async () => {
     const projectsBefore = await cnt(`select count(*) c from projects where name like '%(DEMO)%'`);
     const leadsBefore = await cnt(`select count(*) c from leads where tenant_id=$1`, [
@@ -364,6 +485,22 @@ describe('demo-data generator against EMBEDDED PostgreSQL', () => {
     const evalBefore = await cnt(`select count(*) c from ai_evaluation_cases where tenant_id=$1`, [
       SEED_TENANT_A,
     ]);
+    // Phase 8/9 fixture tables.
+    const visitsBefore = await cnt(`select count(*) c from site_visits where tenant_id=$1`, [
+      SEED_TENANT_A,
+    ]);
+    const autoActsBefore = await cnt(
+      `select count(*) c from automation_run_actions where tenant_id=$1`,
+      [SEED_TENANT_A],
+    );
+    const usageBefore = await cnt(`select count(*) c from usage_counters where tenant_id=$1`, [
+      SEED_TENANT_A,
+    ]);
+    const healthBefore = await cnt(`select count(*) c from system_health_checks`);
+    const notifDelivBefore = await cnt(
+      `select count(*) c from notification_deliveries where tenant_id=$1`,
+      [SEED_TENANT_A],
+    );
 
     const res2 = await runSeed(admin, ctx(false), deps);
     expect(res2.created).toBe(false); // reused the existing run
@@ -399,6 +536,24 @@ describe('demo-data generator against EMBEDDED PostgreSQL', () => {
     expect(
       await cnt(`select count(*) c from ai_evaluation_cases where tenant_id=$1`, [SEED_TENANT_A]),
     ).toBe(evalBefore);
+    // Phase 8/9 fixtures are idempotent too (deterministic ids → no duplicates).
+    expect(
+      await cnt(`select count(*) c from site_visits where tenant_id=$1`, [SEED_TENANT_A]),
+    ).toBe(visitsBefore);
+    expect(
+      await cnt(`select count(*) c from automation_run_actions where tenant_id=$1`, [
+        SEED_TENANT_A,
+      ]),
+    ).toBe(autoActsBefore);
+    expect(
+      await cnt(`select count(*) c from usage_counters where tenant_id=$1`, [SEED_TENANT_A]),
+    ).toBe(usageBefore);
+    expect(await cnt(`select count(*) c from system_health_checks`)).toBe(healthBefore);
+    expect(
+      await cnt(`select count(*) c from notification_deliveries where tenant_id=$1`, [
+        SEED_TENANT_A,
+      ]),
+    ).toBe(notifDelivBefore);
   });
 
   it('reset removes ONLY demo data and preserves an unrelated control row', async () => {
@@ -418,6 +573,17 @@ describe('demo-data generator against EMBEDDED PostgreSQL', () => {
     await pool.query(
       `insert into knowledge_sources (id, tenant_id, source_type, title, state) values ($1,$2,'manual','CONTROL Non-Demo Knowledge','draft') on conflict (id) do nothing`,
       [ctlSrcId, SEED_TENANT_A],
+    );
+    // Phase 8/9 control rows (non-ledger) that MUST survive the reset.
+    const ctlAutoId = '99999999-0000-0000-0000-0000000000c4';
+    await pool.query(
+      `insert into automations (id, tenant_id, name, trigger, enabled) values ($1,$2,'CONTROL Non-Demo Automation','lead_created',false) on conflict (id) do nothing`,
+      [ctlAutoId, SEED_TENANT_A],
+    );
+    const ctlUsageId = '99999999-0000-0000-0000-0000000000c5';
+    await pool.query(
+      `insert into usage_counters (id, tenant_id, metric, period_start, period_end, used) values ($1,$2,'control_metric','2020-01-01','2020-01-31',7) on conflict (id) do nothing`,
+      [ctlUsageId, SEED_TENANT_A],
     );
 
     const runId = (
@@ -471,10 +637,41 @@ describe('demo-data generator against EMBEDDED PostgreSQL', () => {
       ),
     ).toBe(0);
 
+    // Phase 8/9 DEMO rows removed (only this run's ledger rows).
+    expect(await cnt(`select count(*) c from automations where name like '%(DEMO)%'`)).toBe(0);
+    expect(
+      await cnt(
+        `select count(*) c from site_visits v join demo_seed_entities e on e.entity_id=v.id::text where e.entity_type='site_visit'`,
+      ),
+    ).toBe(0);
+    expect(
+      await cnt(
+        `select count(*) c from usage_counters u join demo_seed_entities e on e.entity_id=u.id::text where e.entity_type='usage_counter'`,
+      ),
+    ).toBe(0);
+    expect(
+      await cnt(
+        `select count(*) c from system_health_checks s join demo_seed_entities e on e.entity_id=s.id::text where e.entity_type='system_health_check'`,
+      ),
+    ).toBe(0);
+    expect(
+      await cnt(
+        `select count(*) c from notifications n join demo_seed_entities e on e.entity_id=n.id::text where e.entity_type='notification'`,
+      ),
+    ).toBe(0);
+    // Platform-scope (null-tenant) demo health rows are also gone.
+    expect(
+      await cnt(
+        `select count(*) c from system_health_checks where tenant_id is null and component like 'platform_%'`,
+      ),
+    ).toBe(0);
+
     // Control rows survive.
     expect(await cnt(`select count(*) c from projects where id=$1`, [controlId])).toBe(1);
     expect(await cnt(`select count(*) c from conversations where id=$1`, [ctlConvId])).toBe(1);
     expect(await cnt(`select count(*) c from knowledge_sources where id=$1`, [ctlSrcId])).toBe(1);
+    expect(await cnt(`select count(*) c from automations where id=$1`, [ctlAutoId])).toBe(1);
+    expect(await cnt(`select count(*) c from usage_counters where id=$1`, [ctlUsageId])).toBe(1);
     // Original seed.sql data (Northwind Greens) is untouched.
     expect(await cnt(`select count(*) c from projects where name='Northwind Greens'`)).toBe(1);
   });

@@ -12,6 +12,11 @@ advisory scoring/matching; integrations simulation-only; no live provider IO.
 > provisioned cloud environment, deployment, and monitoring services. Those steps are written
 > below as runbooks to execute in staging; the "Production Controlled MVP Approved" status is
 > **withheld** until they pass with a named approver.
+>
+> **Hosted execution + evidence log:** [`HOSTED_STAGING_EXECUTION_REPORT.md`](./HOSTED_STAGING_EXECUTION_REPORT.md)
+> — the step-by-step commands, evidence placeholders, and sign-off ledger for the operator-run
+> hosted pass. The agent-run read-only preflight there confirms migrations 0001–0030 and the
+> project ref; all cloud-dependent evidence remains `PENDING` until the operator runs it.
 
 ---
 
@@ -190,27 +195,26 @@ assumptions.** _Pending hosted env; the production build size is already emitted
 | Performance baseline              | ⛔ PENDING — hosted                               |
 | Named approver                    | ⛔ PENDING                                        |
 
-**Decision: NO-GO — PENDING HOSTED STAGING.** Promote to the status below **only after** §3–§15
-pass in a real staging environment with a named approver:
+**Decision: NO-GO — PENDING HOSTED STAGING.** The hosted execution + evidence log is
+[`HOSTED_STAGING_EXECUTION_REPORT.md`](./HOSTED_STAGING_EXECUTION_REPORT.md). Promote to the
+APPROVED status below **only after** every hosted requirement in that report's §1–§11 passes with
+pasted evidence and the four named approvals (§12) are signed:
 
 ```
-Core CRM — Production Controlled MVP Approved
-Phase 7A — Locally Complete and Simulated
-Phase 7B — Awaiting External Provider Approval
-Public Provider Webhooks — Disabled
-Live WhatsApp/Email — Not Connected
+Controlled-MVP Production — APPROVED
+Core Product Phases 0–10 — Verified
+Phase 7B Live Providers — Not Activated
+Phase 5B.1 Automatic Live Send — Not Activated
 Automatic Customer Sending — Impossible
 ```
 
 Until then the authoritative status remains:
 
 ```
-Core CRM — Locally Ready for Controlled MVP
-Production Controlled MVP — NO-GO Pending Hosted Staging
-Phase 7A — Locally Complete and Simulated
-Phase 7B — Not Started
-Public Provider Webhooks — Disabled
-Live WhatsApp/Email — Not Connected
+Core Product Phases 0–10 — Locally Complete and Verified
+Controlled-MVP Production — NO-GO Pending Hosted Staging
+Phase 7B Live Providers — Not Activated
+Phase 5B.1 Automatic Live Send — Not Activated
 Automatic Customer Sending — Impossible
 ```
 

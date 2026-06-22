@@ -1089,3 +1089,271 @@ export function buildKnowledgeEvalCases() {
     ),
   ];
 }
+
+// ===========================================================================
+// Phase 8 — Automations, follow-ups, visits, notifications (deterministic)
+//
+// These are fixture ROWS that match the canonical Phase-8 schemas + safety
+// invariants exactly (customer-send actions are suppressed with will_send=false,
+// calendar connections are simulation-only, external notification deliveries are
+// simulated). They are NOT a parallel automation engine — the same DB CHECKs that
+// guard the real services guard these rows.
+// ===========================================================================
+
+/** 2 automation definitions (+ ordered actions). */
+export const AUTOMATION_SPECS = [
+  {
+    key: 'high_intent_followup',
+    name: 'New high-intent lead follow-up (DEMO)',
+    trigger: 'lead_score_changed',
+    enabled: true,
+    condition_group: {
+      combinator: 'and',
+      conditions: [{ field: 'scoreCategory', operator: 'eq', value: 'hot' }],
+    },
+    actions: [
+      { ordinal: 0, action_type: 'create_task', params: { title: 'Call hot lead within 1h' } },
+      { ordinal: 1, action_type: 'notify_user', params: { kind: 'lead_hot' } },
+      { ordinal: 2, action_type: 'send_whatsapp_template', params: { templateId: 'demo_intro' } },
+    ],
+  },
+  {
+    key: 'stale_inventory_task',
+    name: 'Stale inventory verification task (DEMO)',
+    trigger: 'time_schedule',
+    enabled: true,
+    condition_group: null,
+    actions: [
+      { ordinal: 0, action_type: 'create_task', params: { title: 'Re-verify stale inventory' } },
+      { ordinal: 1, action_type: 'add_tag', params: { tag: 'inventory-review' } },
+    ],
+  },
+];
+
+/**
+ * 3 automation runs: a completed internal task action, a completed internal
+ * tag/note action, and a SUPPRESSED customer-send action (will_send=false).
+ */
+export const AUTOMATION_RUN_SPECS = [
+  {
+    key: 'run_task',
+    automationKey: 'high_intent_followup',
+    matched: true,
+    action: {
+      action_type: 'create_task',
+      category: 'internal',
+      status: 'executed',
+      will_send: false,
+    },
+    createsTaskTitle: 'Demo automation: call hot lead',
+  },
+  {
+    key: 'run_tag',
+    automationKey: 'stale_inventory_task',
+    matched: true,
+    action: { action_type: 'add_tag', category: 'internal', status: 'executed', will_send: false },
+  },
+  {
+    key: 'run_suppressed',
+    automationKey: 'high_intent_followup',
+    matched: true,
+    action: {
+      action_type: 'send_whatsapp_template',
+      category: 'customer_send',
+      status: 'suppressed',
+      will_send: false, // headline safety invariant
+      suppressed_reason: 'live_send_master_switch_off',
+    },
+  },
+];
+
+/** 2 follow-up sequences (+ steps). Quiet hours 20:00–09:00 (IST default). */
+export const FOLLOWUP_SEQUENCE_SPECS = [
+  {
+    key: 'hot_nurture',
+    name: 'Hot lead nurture (DEMO)',
+    enabled: true,
+    steps: [
+      { step_index: 0, delay_hours: 0, channel: 'whatsapp', only: ['hot'] },
+      { step_index: 1, delay_hours: 72, channel: 'email', only: [] },
+    ],
+  },
+  {
+    key: 'reengage',
+    name: 'Re-engagement (DEMO)',
+    enabled: true,
+    steps: [
+      { step_index: 0, delay_hours: 24, channel: 'whatsapp', only: [] },
+      { step_index: 1, delay_hours: 120, channel: 'email', only: [] },
+    ],
+  },
+];
+
+/**
+ * 3 enrollments — active, stopped (DNC), stopped (human response) — with 6 step
+ * events total, every `send` outcome externally SUPPRESSED (will_send=false).
+ */
+export const FOLLOWUP_ENROLLMENT_SPECS = [
+  {
+    key: 'enr_active',
+    sequenceKey: 'hot_nurture',
+    status: 'active',
+    stop_reason: null,
+    leadIdx: 0,
+    current_step_index: 1,
+    events: [
+      { step_index: 0, outcome: 'send' },
+      { step_index: 1, outcome: 'send' },
+    ],
+  },
+  {
+    key: 'enr_dnc',
+    sequenceKey: 'hot_nurture',
+    status: 'stopped',
+    stop_reason: 'dnc_active',
+    leadIdx: 1,
+    current_step_index: 1,
+    events: [
+      { step_index: 0, outcome: 'send' },
+      { step_index: 0, outcome: 'stop', stop_reason: 'dnc_active' },
+    ],
+  },
+  {
+    key: 'enr_human',
+    sequenceKey: 'reengage',
+    status: 'stopped',
+    stop_reason: 'human_takeover',
+    leadIdx: 2,
+    current_step_index: 0,
+    events: [
+      { step_index: 0, outcome: 'send' },
+      { step_index: 0, outcome: 'stop', stop_reason: 'human_takeover' },
+    ],
+  },
+];
+
+/**
+ * 5 site visits across the lifecycle. The `confirmed` visit (dayOffset 1, 12:00)
+ * is the deterministic DOUBLE-BOOKING case: a second visit for the same agent at
+ * that window overlaps an existing busy block and is rejected.
+ */
+export const VISIT_SPECS = [
+  { key: 'v_requested', state: 'requested', leadIdx: 0, dayOffset: 1, hour: 10, events: [] },
+  {
+    key: 'v_confirmed',
+    state: 'confirmed',
+    leadIdx: 1,
+    dayOffset: 1,
+    hour: 12,
+    events: [
+      ['requested', 'scheduled'],
+      ['scheduled', 'confirmed'],
+    ],
+  },
+  {
+    key: 'v_rescheduled',
+    state: 'rescheduled',
+    leadIdx: 2,
+    dayOffset: 2,
+    hour: 15,
+    events: [
+      ['requested', 'scheduled'],
+      ['scheduled', 'rescheduled'],
+    ],
+  },
+  {
+    key: 'v_completed',
+    state: 'completed',
+    leadIdx: 3,
+    dayOffset: -1,
+    hour: 11,
+    events: [
+      ['scheduled', 'confirmed'],
+      ['confirmed', 'in_progress'],
+      ['in_progress', 'completed'],
+    ],
+    outcome: { attended: true, interest_level: 'high', feedback: 'Liked the layout (DEMO).' },
+  },
+  {
+    key: 'v_cancelled',
+    state: 'cancelled',
+    leadIdx: 0,
+    dayOffset: 3,
+    hour: 9,
+    events: [
+      ['requested', 'scheduled'],
+      ['scheduled', 'cancelled'],
+    ],
+  },
+];
+
+/** 3 SIMULATED calendar busy blocks for the agent (never a live calendar). */
+export const CALENDAR_BUSY_SPECS = [
+  { key: 'busy_confirmed', dayOffset: 1, hour: 12 }, // overlaps v_confirmed → double-booking slot
+  { key: 'busy_rescheduled', dayOffset: 2, hour: 15 },
+  { key: 'busy_completed', dayOffset: -1, hour: 11 },
+];
+
+/** 8 notifications, mixed read/unread. External (email) deliveries are simulated. */
+export const NOTIFICATION_SPECS = [
+  { key: 'n1', kind: 'lead_assigned', priority: 'normal', read: true },
+  { key: 'n2', kind: 'lead_hot', priority: 'high', read: false },
+  { key: 'n3', kind: 'conversation_waiting', priority: 'high', read: false },
+  { key: 'n4', kind: 'task_due', priority: 'normal', read: true },
+  { key: 'n5', kind: 'visit_scheduled', priority: 'normal', read: false },
+  { key: 'n6', kind: 'visit_reminder', priority: 'high', read: false },
+  { key: 'n7', kind: 'sla_breach', priority: 'urgent', read: false },
+  { key: 'n8', kind: 'mention', priority: 'normal', read: true },
+];
+
+// ===========================================================================
+// Phase 9 — Analytics & administration fixtures (deterministic)
+// ===========================================================================
+
+/**
+ * Plan limits mirrored from `@re/config` DEFAULT_PLAN_LIMITS (the CLI cannot
+ * import the TS package). Used only to compute below/near/at-limit fixture values.
+ */
+export const PLAN_LIMITS = {
+  starter: { monthlyAiBudgetUsd: 50, monthlyWhatsappMessages: 5000, storageGb: 5 },
+  growth: { monthlyAiBudgetUsd: 500, monthlyWhatsappMessages: 50000, storageGb: 50 },
+  enterprise: { monthlyAiBudgetUsd: 1e9, monthlyWhatsappMessages: 1e9, storageGb: 1000 },
+};
+
+/**
+ * Metered usage counters rendered by /settings/usage (current month). Fractions
+ * produce one BELOW, one NEAR (>=80%) and one AT the plan limit.
+ */
+export const USAGE_METERED = [
+  { metric: 'ai_budget_usd', limitKey: 'monthlyAiBudgetUsd', frac: 0.3 }, // below
+  { metric: 'whatsapp_messages', limitKey: 'monthlyWhatsappMessages', frac: 0.85 }, // near
+  { metric: 'storage_gb', limitKey: 'storageGb', frac: 1.0 }, // at
+];
+
+/** Informational counters (directive naming: AI runs, leads, conversations). */
+export const USAGE_INFO = [
+  { metric: 'ai_runs', used: 120 },
+  { metric: 'leads', used: 40 },
+  { metric: 'conversations', used: 15 },
+];
+
+/**
+ * System-health snapshots: 6 tenant (2 healthy / 2 degraded / 2 down) + 2
+ * platform-level (tenant_id null; visible only to platform admins).
+ */
+export const HEALTH_SPECS = [
+  { key: 'h_db', component: 'database', state: 'healthy', platform: false, latency_ms: 12 },
+  { key: 'h_chat', component: 'website_chat', state: 'healthy', platform: false, latency_ms: 40 },
+  { key: 'h_queue', component: 'pgmq_queue', state: 'degraded', platform: false, latency_ms: 320 },
+  { key: 'h_storage', component: 'storage', state: 'degraded', platform: false, latency_ms: 280 },
+  { key: 'h_ai', component: 'ai_provider', state: 'down', platform: false, latency_ms: null },
+  { key: 'h_integ', component: 'integrations', state: 'down', platform: false, latency_ms: null },
+  { key: 'h_papi', component: 'platform_api', state: 'healthy', platform: true, latency_ms: 18 },
+  { key: 'h_pdb', component: 'platform_db', state: 'degraded', platform: true, latency_ms: 210 },
+];
+
+/** 2 logged analytics exports (data-egress ledger). No payment-provider record. */
+export const EXPORT_SPECS = [
+  { key: 'exp_overview', report: 'overview', format: 'csv', row_count: 12 },
+  { key: 'exp_team', report: 'team', format: 'json', row_count: 5 },
+];

@@ -20,6 +20,18 @@ import {
   buildConversations,
   buildKnowledgeDocs,
   buildKnowledgeEvalCases,
+  AUTOMATION_SPECS,
+  AUTOMATION_RUN_SPECS,
+  FOLLOWUP_SEQUENCE_SPECS,
+  FOLLOWUP_ENROLLMENT_SPECS,
+  VISIT_SPECS,
+  CALENDAR_BUSY_SPECS,
+  NOTIFICATION_SPECS,
+  PLAN_LIMITS,
+  USAGE_METERED,
+  USAGE_INFO,
+  HEALTH_SPECS,
+  EXPORT_SPECS,
 } from './dataset.mjs';
 import { findOrCreateRun, recordEntity, completeRun, failRun } from './ledger.mjs';
 
@@ -86,6 +98,31 @@ export async function runSeed(admin, ctx, deps = {}) {
     knowledge_chunks: 0,
     mock_embeddings: 0,
     knowledge_eval_cases: 0,
+    // Phase 8 — automations & visits
+    automations: 0,
+    automation_actions: 0,
+    automation_runs: 0,
+    automation_run_actions: 0,
+    automation_suppressed_actions: 0,
+    followup_sequences: 0,
+    followup_steps: 0,
+    followup_enrollments: 0,
+    followup_step_events: 0,
+    site_visits: 0,
+    visit_events: 0,
+    visit_outcomes: 0,
+    calendar_busy_blocks: 0,
+    calendar_connections: 0,
+    double_booking_rejection_cases: 0,
+    notifications: 0,
+    notification_deliveries: 0,
+    notification_external_simulated: 0,
+    notification_preferences: 0,
+    // Phase 9 — analytics & administration
+    usage_counters: 0,
+    billing_periods: 0,
+    system_health_checks: 0,
+    analytics_export_logs: 0,
   };
 
   const run = await (dryRun
@@ -436,6 +473,28 @@ export async function runSeed(admin, ctx, deps = {}) {
     chunks: counts.knowledge_chunks,
     mock_embeddings: counts.mock_embeddings,
     eval_cases: counts.knowledge_eval_cases,
+  });
+
+  // ---- Phase 8 — automations, follow-ups, visits, notifications ------------
+  await seedPhase8(admin, { tenantId, runId, dryRun, correlationId }, counts);
+  await deps.audit?.('demo.seed.section_completed', {
+    section: 'phase8',
+    automations: counts.automations,
+    automation_runs: counts.automation_runs,
+    followup_enrollments: counts.followup_enrollments,
+    site_visits: counts.site_visits,
+    notifications: counts.notifications,
+    suppressed_actions: counts.automation_suppressed_actions,
+  });
+
+  // ---- Phase 9 — usage, billing, system health, export logs ----------------
+  await seedPhase9(admin, { tenantId, runId, dryRun }, counts);
+  await deps.audit?.('demo.seed.section_completed', {
+    section: 'phase9',
+    usage_counters: counts.usage_counters,
+    billing_periods: counts.billing_periods,
+    system_health_checks: counts.system_health_checks,
+    analytics_export_logs: counts.analytics_export_logs,
   });
 
   if (!dryRun) await completeRun(admin, runId, counts);
@@ -874,6 +933,572 @@ function scoreObservationsFor(hint) {
     case 'cold':
     default:
       return [];
+  }
+}
+
+// ===========================================================================
+// PHASE 8 — Automations, follow-ups, visits, notifications (fixtures)
+// ===========================================================================
+
+/** Resolve existing demo actors (leads come from the demo seed OR base seed.sql). */
+async function resolveDemoActors(admin, tenantId) {
+  const { data: leadRows } = await admin
+    .from('leads')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .order('created_at', { ascending: true })
+    .limit(5);
+  const leads = (leadRows ?? []).map((r) => r.id);
+  const { data: projRows } = await admin
+    .from('projects')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .limit(1);
+  return { leads, projectId: projRows?.[0]?.id ?? null, agentId: SEEDED_AGENT };
+}
+
+/** now + dayOffset at `hour`:00 UTC (idempotent via deterministic row ids). */
+function visitTime(dayOffset, hour) {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + dayOffset);
+  d.setUTCHours(hour, 0, 0, 0);
+  return d.toISOString();
+}
+
+async function seedPhase8(admin, ctx, counts) {
+  const { tenantId, runId, dryRun } = ctx;
+  if (dryRun) {
+    counts.automations = AUTOMATION_SPECS.length;
+    counts.automation_actions = AUTOMATION_SPECS.reduce((n, a) => n + a.actions.length, 0);
+    counts.automation_runs = AUTOMATION_RUN_SPECS.length;
+    counts.automation_run_actions = AUTOMATION_RUN_SPECS.length;
+    counts.automation_suppressed_actions = AUTOMATION_RUN_SPECS.filter(
+      (r) => r.action.category === 'customer_send',
+    ).length;
+    counts.followup_sequences = FOLLOWUP_SEQUENCE_SPECS.length;
+    counts.followup_steps = FOLLOWUP_SEQUENCE_SPECS.reduce((n, s) => n + s.steps.length, 0);
+    counts.followup_enrollments = FOLLOWUP_ENROLLMENT_SPECS.length;
+    counts.followup_step_events = FOLLOWUP_ENROLLMENT_SPECS.reduce(
+      (n, e) => n + e.events.length,
+      0,
+    );
+    counts.site_visits = VISIT_SPECS.length;
+    counts.visit_events = VISIT_SPECS.reduce((n, v) => n + v.events.length, 0);
+    counts.visit_outcomes = VISIT_SPECS.filter((v) => v.outcome).length;
+    counts.calendar_busy_blocks = CALENDAR_BUSY_SPECS.length;
+    counts.calendar_connections = 1;
+    counts.double_booking_rejection_cases = 1;
+    counts.notifications = NOTIFICATION_SPECS.length;
+    const ext = NOTIFICATION_SPECS.filter((n) => n.priority === 'high' || n.priority === 'urgent');
+    counts.notification_deliveries = NOTIFICATION_SPECS.length + ext.length;
+    counts.notification_external_simulated = ext.length;
+    counts.notification_preferences = 1;
+    return;
+  }
+
+  const { leads, projectId, agentId } = await resolveDemoActors(admin, tenantId);
+  const leadAt = (i) => (leads.length ? leads[i % leads.length] : null);
+
+  // --- Automations + ordered actions ---
+  const autoIds = {};
+  for (const a of AUTOMATION_SPECS) {
+    const aid = deterministicUuid(tenantId, 'automation', a.key);
+    autoIds[a.key] = aid;
+    await upsertById(
+      admin,
+      'automations',
+      aid,
+      {
+        tenant_id: tenantId,
+        name: a.name,
+        trigger: a.trigger,
+        enabled: a.enabled,
+        condition_group: a.condition_group,
+        created_by: SEEDED_ADMIN,
+      },
+      false,
+    );
+    await recordEntity(admin, tenantId, runId, 'automation', aid, externalRef('automation', a.key));
+    counts.automations++;
+    for (const act of a.actions) {
+      const actid = deterministicUuid(tenantId, 'automation_action', `${a.key}|${act.ordinal}`);
+      await upsertById(
+        admin,
+        'automation_actions',
+        actid,
+        {
+          tenant_id: tenantId,
+          automation_id: aid,
+          ordinal: act.ordinal,
+          action_type: act.action_type,
+          params: act.params ?? {},
+        },
+        false,
+      );
+      counts.automation_actions++;
+    }
+  }
+
+  // --- Automation runs + run actions (+ a materialised demo task) ---
+  for (const r of AUTOMATION_RUN_SPECS) {
+    const spec = AUTOMATION_SPECS.find((a) => a.key === r.automationKey);
+    const arid = deterministicUuid(tenantId, 'automation_run', r.key);
+    await upsertById(
+      admin,
+      'automation_runs',
+      arid,
+      {
+        tenant_id: tenantId,
+        automation_id: autoIds[r.automationKey],
+        lead_id: leadAt(0),
+        trigger: spec.trigger,
+        matched: r.matched,
+        skipped_reason: null,
+        correlation_id: 'demo',
+      },
+      false,
+    );
+    await recordEntity(admin, tenantId, runId, 'automation_run', arid, externalRef('arun', r.key));
+    counts.automation_runs++;
+    const aaid = deterministicUuid(tenantId, 'automation_run_action', r.key);
+    await upsertById(
+      admin,
+      'automation_run_actions',
+      aaid,
+      {
+        tenant_id: tenantId,
+        run_id: arid,
+        action_type: r.action.action_type,
+        category: r.action.category,
+        will_send: false, // headline safety invariant — never true
+        suppressed_reason: r.action.suppressed_reason ?? null,
+        status: r.action.status,
+        params: {},
+      },
+      false,
+    );
+    counts.automation_run_actions++;
+    if (r.action.category === 'customer_send') counts.automation_suppressed_actions++;
+    if (r.createsTaskTitle) {
+      const tid = deterministicUuid(tenantId, 'automation_task', r.key);
+      await upsertById(
+        admin,
+        'tasks',
+        tid,
+        {
+          tenant_id: tenantId,
+          lead_id: leadAt(0),
+          title: r.createsTaskTitle,
+          status: 'open',
+          created_by: SEEDED_ADMIN,
+        },
+        false,
+      );
+      await recordEntity(admin, tenantId, runId, 'task', tid, externalRef('atask', r.key));
+      counts.tasks++;
+    }
+  }
+
+  // --- Follow-up sequences + steps ---
+  const seqIds = {};
+  for (const s of FOLLOWUP_SEQUENCE_SPECS) {
+    const sid = deterministicUuid(tenantId, 'followup_sequence', s.key);
+    seqIds[s.key] = sid;
+    await upsertById(
+      admin,
+      'followup_sequences',
+      sid,
+      {
+        tenant_id: tenantId,
+        name: s.name,
+        enabled: s.enabled,
+        stop_on_reply: true,
+        quiet_start_hour: 20,
+        quiet_end_hour: 9,
+        created_by: SEEDED_ADMIN,
+      },
+      false,
+    );
+    await recordEntity(
+      admin,
+      tenantId,
+      runId,
+      'followup_sequence',
+      sid,
+      externalRef('fseq', s.key),
+    );
+    counts.followup_sequences++;
+    for (const st of s.steps) {
+      const stid = deterministicUuid(tenantId, 'followup_step', `${s.key}|${st.step_index}`);
+      await upsertById(
+        admin,
+        'followup_steps',
+        stid,
+        {
+          tenant_id: tenantId,
+          sequence_id: sid,
+          step_index: st.step_index,
+          delay_hours: st.delay_hours,
+          channel: st.channel,
+          template_id: null,
+          only_score_categories: st.only ?? [],
+        },
+        false,
+      );
+      counts.followup_steps++;
+    }
+  }
+
+  // --- Enrollments + step events (every send externally suppressed) ---
+  for (const e of FOLLOWUP_ENROLLMENT_SPECS) {
+    const leadId = leadAt(e.leadIdx);
+    if (!leadId) continue;
+    const eid = deterministicUuid(tenantId, 'followup_enrollment', e.key);
+    await upsertById(
+      admin,
+      'followup_enrollments',
+      eid,
+      {
+        tenant_id: tenantId,
+        sequence_id: seqIds[e.sequenceKey],
+        lead_id: leadId,
+        current_step_index: e.current_step_index,
+        status: e.status,
+        stop_reason: e.stop_reason,
+        enrolled_score_category: 'hot',
+      },
+      false,
+    );
+    counts.followup_enrollments++;
+    for (const [i, ev] of e.events.entries()) {
+      const evid = deterministicUuid(tenantId, 'followup_step_event', `${e.key}|${i}`);
+      const isSend = ev.outcome === 'send';
+      await upsertById(
+        admin,
+        'followup_step_events',
+        evid,
+        {
+          tenant_id: tenantId,
+          enrollment_id: eid,
+          step_index: ev.step_index,
+          outcome: ev.outcome,
+          stop_reason: ev.stop_reason ?? null,
+          channel: isSend ? 'whatsapp' : null,
+          why_sent: isSend
+            ? {
+                sequenceId: seqIds[e.sequenceKey],
+                stepIndex: ev.step_index,
+                channel: 'whatsapp',
+                templateId: null,
+                enrolledScoreCategory: 'hot',
+                reason: 'scheduled_followup_step',
+              }
+            : null,
+          will_send: false, // never a real send
+          suppressed_reason: isSend ? 'live_send_master_switch_off' : null,
+        },
+        false,
+      );
+      counts.followup_step_events++;
+    }
+  }
+
+  // --- Site visits + transitions + outcomes ---
+  for (const v of VISIT_SPECS) {
+    const leadId = leadAt(v.leadIdx);
+    if (!leadId) continue;
+    const vid = deterministicUuid(tenantId, 'site_visit', v.key);
+    await upsertById(
+      admin,
+      'site_visits',
+      vid,
+      {
+        tenant_id: tenantId,
+        lead_id: leadId,
+        project_id: projectId,
+        agent_id: agentId,
+        scheduled_start: visitTime(v.dayOffset, v.hour),
+        scheduled_end: visitTime(v.dayOffset, v.hour + 1),
+        state: v.state,
+        location: 'Demo site office',
+        notes: 'Synthetic demo visit.',
+        created_by: SEEDED_ADMIN,
+      },
+      false,
+    );
+    await recordEntity(admin, tenantId, runId, 'site_visit', vid, externalRef('visit', v.key));
+    counts.site_visits++;
+    for (const [i, [from, to]] of v.events.entries()) {
+      const veid = deterministicUuid(tenantId, 'visit_event', `${v.key}|${i}`);
+      await upsertById(
+        admin,
+        'visit_events',
+        veid,
+        {
+          tenant_id: tenantId,
+          visit_id: vid,
+          from_state: from,
+          to_state: to,
+          actor_id: SEEDED_ADMIN,
+          reason: 'demo transition',
+        },
+        false,
+      );
+      counts.visit_events++;
+    }
+    if (v.outcome) {
+      const void2 = deterministicUuid(tenantId, 'visit_outcome', v.key);
+      await upsertById(
+        admin,
+        'visit_outcomes',
+        void2,
+        {
+          tenant_id: tenantId,
+          visit_id: vid,
+          attended: v.outcome.attended,
+          interest_level: v.outcome.interest_level ?? null,
+          feedback: v.outcome.feedback ?? null,
+        },
+        false,
+      );
+      counts.visit_outcomes++;
+    }
+  }
+  // The seeded busy block at v_confirmed's slot is the deterministic
+  // double-booking rejection case (a new visit there overlaps + is rejected).
+  counts.double_booking_rejection_cases = 1;
+
+  // --- Calendar: 1 SIMULATED connection + 3 SIMULATED busy blocks ---
+  const ccid = deterministicUuid(tenantId, 'calendar_connection', 'agent');
+  await upsertById(
+    admin,
+    'calendar_connections',
+    ccid,
+    {
+      tenant_id: tenantId,
+      agent_id: agentId,
+      provider: 'google',
+      status: 'simulated', // never 'connected'
+      metadata: { demo: true },
+    },
+    false,
+  );
+  await recordEntity(admin, tenantId, runId, 'calendar_connection', ccid);
+  counts.calendar_connections++;
+  for (const b of CALENDAR_BUSY_SPECS) {
+    const bid = deterministicUuid(tenantId, 'calendar_busy_block', b.key);
+    await upsertById(
+      admin,
+      'calendar_busy_blocks',
+      bid,
+      {
+        tenant_id: tenantId,
+        agent_id: agentId,
+        source: 'calendar',
+        ref_id: b.key,
+        block_start: visitTime(b.dayOffset, b.hour),
+        block_end: visitTime(b.dayOffset, b.hour + 1),
+      },
+      false,
+    );
+    await recordEntity(admin, tenantId, runId, 'calendar_busy_block', bid);
+    counts.calendar_busy_blocks++;
+  }
+
+  // --- Notifications + deliveries (external simulated) + preferences ---
+  for (const n of NOTIFICATION_SPECS) {
+    const nid = deterministicUuid(tenantId, 'notification', n.key);
+    await upsertById(
+      admin,
+      'notifications',
+      nid,
+      {
+        tenant_id: tenantId,
+        recipient_user_id: SEEDED_ADMIN,
+        kind: n.kind,
+        priority: n.priority,
+        title: `Demo: ${n.kind}`,
+        body: 'Synthetic demo notification.',
+        dedupe_key: `demo:${n.key}`,
+        read_at: n.read ? new Date().toISOString() : null,
+      },
+      false,
+    );
+    await recordEntity(admin, tenantId, runId, 'notification', nid, externalRef('notif', n.key));
+    counts.notifications++;
+    const inAppId = deterministicUuid(tenantId, 'notif_delivery', `${n.key}|in_app`);
+    await upsertById(
+      admin,
+      'notification_deliveries',
+      inAppId,
+      {
+        tenant_id: tenantId,
+        notification_id: nid,
+        channel: 'in_app',
+        status: 'delivered',
+        simulated: false,
+      },
+      false,
+    );
+    counts.notification_deliveries++;
+    if (n.priority === 'high' || n.priority === 'urgent') {
+      const emailId = deterministicUuid(tenantId, 'notif_delivery', `${n.key}|email`);
+      await upsertById(
+        admin,
+        'notification_deliveries',
+        emailId,
+        {
+          tenant_id: tenantId,
+          notification_id: nid,
+          channel: 'email',
+          status: 'simulated',
+          simulated: true, // external delivery is always simulated
+        },
+        false,
+      );
+      counts.notification_deliveries++;
+      counts.notification_external_simulated++;
+    }
+  }
+  const npid = deterministicUuid(tenantId, 'notif_pref', 'admin');
+  await upsertById(
+    admin,
+    'notification_preferences',
+    npid,
+    {
+      tenant_id: tenantId,
+      user_id: SEEDED_ADMIN,
+      email_enabled: true,
+      push_enabled: false,
+      quiet_hours_enabled: true,
+      muted_kinds: [],
+    },
+    false,
+  );
+  await recordEntity(admin, tenantId, runId, 'notification_preference', npid);
+  counts.notification_preferences++;
+}
+
+// ===========================================================================
+// PHASE 9 — Usage, billing, system health, export logs (fixtures)
+// ===========================================================================
+
+function currentMonthRange(now = new Date()) {
+  const y = now.getUTCFullYear();
+  const m = now.getUTCMonth();
+  return {
+    start: new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10),
+    end: new Date(Date.UTC(y, m + 1, 0)).toISOString().slice(0, 10),
+  };
+}
+
+async function seedPhase9(admin, ctx, counts) {
+  const { tenantId, runId, dryRun } = ctx;
+  if (dryRun) {
+    counts.usage_counters = USAGE_METERED.length + USAGE_INFO.length;
+    counts.billing_periods = 1;
+    counts.system_health_checks = HEALTH_SPECS.length;
+    counts.analytics_export_logs = EXPORT_SPECS.length;
+    return;
+  }
+
+  const { start, end } = currentMonthRange();
+  const { data: tRow } = await admin
+    .from('tenants')
+    .select('plan_tier')
+    .eq('id', tenantId)
+    .maybeSingle();
+  const tier = ['starter', 'growth', 'enterprise'].includes(tRow?.plan_tier)
+    ? tRow.plan_tier
+    : 'starter';
+  const limits = PLAN_LIMITS[tier];
+
+  // Metered counters: below / near / at the plan limit (current month).
+  for (const u of USAGE_METERED) {
+    const used = Math.round(limits[u.limitKey] * u.frac);
+    const id = deterministicUuid(tenantId, 'usage_counter', `${u.metric}|${start}`);
+    await upsertById(
+      admin,
+      'usage_counters',
+      id,
+      { tenant_id: tenantId, metric: u.metric, period_start: start, period_end: end, used },
+      false,
+    );
+    await recordEntity(admin, tenantId, runId, 'usage_counter', id);
+    counts.usage_counters++;
+  }
+  for (const u of USAGE_INFO) {
+    const id = deterministicUuid(tenantId, 'usage_counter', `${u.metric}|${start}`);
+    await upsertById(
+      admin,
+      'usage_counters',
+      id,
+      { tenant_id: tenantId, metric: u.metric, period_start: start, period_end: end, used: u.used },
+      false,
+    );
+    await recordEntity(admin, tenantId, runId, 'usage_counter', id);
+    counts.usage_counters++;
+  }
+
+  // One synthetic billing period — NO payment-provider record.
+  const bpid = deterministicUuid(tenantId, 'billing_period', start);
+  await upsertById(
+    admin,
+    'billing_periods',
+    bpid,
+    {
+      tenant_id: tenantId,
+      period_start: start,
+      period_end: end,
+      plan_tier: tier,
+      status: 'open',
+      currency: 'INR',
+      amount_due: 0,
+    },
+    false,
+  );
+  await recordEntity(admin, tenantId, runId, 'billing_period', bpid);
+  counts.billing_periods++;
+
+  // System-health snapshots (6 tenant + 2 platform-level [tenant_id null]).
+  for (const h of HEALTH_SPECS) {
+    const id = deterministicUuid(tenantId, 'system_health_check', h.key);
+    await upsertById(
+      admin,
+      'system_health_checks',
+      id,
+      {
+        tenant_id: h.platform ? null : tenantId,
+        component: h.component,
+        state: h.state,
+        latency_ms: h.latency_ms,
+        detail: 'Synthetic demo health snapshot.',
+      },
+      false,
+    );
+    await recordEntity(admin, tenantId, runId, 'system_health_check', id);
+    counts.system_health_checks++;
+  }
+
+  // Logged analytics exports (data-egress ledger).
+  for (const e of EXPORT_SPECS) {
+    const id = deterministicUuid(tenantId, 'analytics_export_log', e.key);
+    await upsertById(
+      admin,
+      'analytics_export_logs',
+      id,
+      {
+        tenant_id: tenantId,
+        actor_user_id: SEEDED_ADMIN,
+        report: e.report,
+        format: e.format,
+        row_count: e.row_count,
+        filters: {},
+      },
+      false,
+    );
+    await recordEntity(admin, tenantId, runId, 'analytics_export_log', id);
+    counts.analytics_export_logs++;
   }
 }
 

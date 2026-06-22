@@ -12,6 +12,22 @@ import { listEntities } from './ledger.mjs';
 // FK-safe teardown order: children before parents. Maps entity_type → table +
 // id column. Order matters (later rows reference earlier tables).
 const DELETE_ORDER = [
+  // --- Phase 8 & 9 (parents/standalone; cascades handle children). Deleted
+  //     BEFORE leads so a lead delete never cascades a demo visit/enrollment
+  //     out of order. The optional 4th element = skip the tenant_id filter
+  //     (platform-scope system_health_checks have a NULL tenant_id). --------
+  ['automation_run', 'automation_runs', 'id'],
+  ['automation', 'automations', 'id'], // cascades actions/runs/run_actions
+  ['followup_sequence', 'followup_sequences', 'id'], // cascades steps/enrollments/events
+  ['site_visit', 'site_visits', 'id'], // cascades visit events/outcomes
+  ['calendar_busy_block', 'calendar_busy_blocks', 'id'],
+  ['calendar_connection', 'calendar_connections', 'id'],
+  ['notification', 'notifications', 'id'], // cascades deliveries
+  ['notification_preference', 'notification_preferences', 'id'],
+  ['usage_counter', 'usage_counters', 'id'],
+  ['billing_period', 'billing_periods', 'id'],
+  ['system_health_check', 'system_health_checks', 'id', true], // platform rows have null tenant
+  ['analytics_export_log', 'analytics_export_logs', 'id'],
   // --- Knowledge (children first; deleting the source cascades chunks /
   //     embeddings / versions / documents / approval events). Eval cases before
   //     their dataset. -----------------------------------------------------
@@ -55,12 +71,17 @@ export async function runReset(admin, ctx, deps = {}) {
   }
 
   const removed = {};
-  for (const [type, table, idCol] of DELETE_ORDER) {
+  for (const [type, table, idCol, noTenantScope] of DELETE_ORDER) {
     const ids = byType.get(type) ?? [];
     removed[type] = ids.length;
     if (dryRun || ids.length === 0) continue;
-    // Tenant-scoped delete of exactly the recorded ids (defense in depth).
-    await admin.from(table).delete().eq('tenant_id', tenantId).in(idCol, ids);
+    // Delete EXACTLY the recorded ids. Tenant-scoped (defense in depth) except
+    // for tables that legitimately hold platform-scope (null-tenant) rows.
+    if (noTenantScope) {
+      await admin.from(table).delete().in(idCol, ids);
+    } else {
+      await admin.from(table).delete().eq('tenant_id', tenantId).in(idCol, ids);
+    }
     log(`removed ${ids.length} ${type}`);
   }
 

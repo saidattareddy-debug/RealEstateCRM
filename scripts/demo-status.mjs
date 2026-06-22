@@ -60,6 +60,55 @@ async function main() {
     `mock embeddings ${c.mock_embeddings ?? 0},`,
     `eval cases ${byType.ai_evaluation_case ?? c.knowledge_eval_cases ?? 0})`,
   );
+
+  // ---- Phase 8 — Automations & Visits -------------------------------------
+  console.log('  --- Phase 8 (Automations & Visits) ---');
+  console.log(
+    '  Automations    :',
+    byType.automation ?? c.automations ?? 0,
+    `(actions ${c.automation_actions ?? 0},`,
+    `runs ${byType.automation_run ?? c.automation_runs ?? 0},`,
+    `suppressed customer-send ${c.automation_suppressed_actions ?? 0})`,
+  );
+  console.log(
+    '  Follow-ups     :',
+    byType.followup_sequence ?? c.followup_sequences ?? 0,
+    `sequences (steps ${c.followup_steps ?? 0},`,
+    `enrollments ${c.followup_enrollments ?? 0},`,
+    `step events ${c.followup_step_events ?? 0} — all suppressed)`,
+  );
+  console.log(
+    '  Site visits    :',
+    byType.site_visit ?? c.site_visits ?? 0,
+    `(events ${c.visit_events ?? 0},`,
+    `outcomes ${c.visit_outcomes ?? 0},`,
+    `double-booking rejection cases ${c.double_booking_rejection_cases ?? 0})`,
+  );
+  console.log(
+    '  Calendar       :',
+    byType.calendar_connection ?? c.calendar_connections ?? 0,
+    `connection(s) [simulation-only], busy blocks ${byType.calendar_busy_block ?? c.calendar_busy_blocks ?? 0}`,
+  );
+  console.log(
+    '  Notifications  :',
+    byType.notification ?? c.notifications ?? 0,
+    `(deliveries ${c.notification_deliveries ?? 0},`,
+    `external simulated ${c.notification_external_simulated ?? 0},`,
+    `preferences ${byType.notification_preference ?? c.notification_preferences ?? 0})`,
+  );
+
+  // ---- Phase 9 — Analytics & Administration -------------------------------
+  console.log('  --- Phase 9 (Analytics & Administration) ---');
+  console.log(
+    '  Usage counters :',
+    byType.usage_counter ?? c.usage_counters ?? 0,
+    `(below/near/at metered) | billing periods ${byType.billing_period ?? c.billing_periods ?? 0}`,
+  );
+  console.log(
+    '  System health  :',
+    byType.system_health_check ?? c.system_health_checks ?? 0,
+    `checks | analytics export logs ${byType.analytics_export_log ?? c.analytics_export_logs ?? 0}`,
+  );
   console.log('========================\n');
 }
 

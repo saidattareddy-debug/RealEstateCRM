@@ -59,6 +59,9 @@ const TEXT_ARRAY_COLUMNS = new Set([
   'preference_signals',
   'qualification_signals',
   'requested_scopes',
+  // Phase 8 (automations & visits) text[] columns.
+  'only_score_categories',
+  'muted_kinds',
 ]);
 
 function sqlVal(v: unknown, col?: string): unknown {
