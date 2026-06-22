@@ -1,7 +1,7 @@
 # Production Activation Design
 
 **Date:** 2026-06-22
-**Status:** Approved design, pending implementation plan
+**Status:** Approved design for first implementation slice, pending implementation plan
 **Scope:** Repo-first production hardening for a full live-activation roadmap
 **Primary first-live channel:** Website chat
 **Long-term target state:** Live providers and automatic AI customer sending across channels
@@ -34,11 +34,11 @@ This design also does not authorize unsafe shortcuts such as running demo seed d
 
 The system should operate in three clearly separated environments:
 
-| Environment | Purpose | Data | Supabase | Vercel |
-| --- | --- | --- | --- | --- |
-| Local | developer iteration | synthetic only | local or isolated dev | local |
-| Staging | hosted verification, QA, smoke tests | synthetic/demo only | dedicated staging project | preview or staging deployment |
-| Production | live customer operations | real customer data only | dedicated production project | production deployment |
+| Environment | Purpose                              | Data                    | Supabase                     | Vercel                        |
+| ----------- | ------------------------------------ | ----------------------- | ---------------------------- | ----------------------------- |
+| Local       | developer iteration                  | synthetic only          | local or isolated dev        | local                         |
+| Staging     | hosted verification, QA, smoke tests | synthetic/demo only     | dedicated staging project    | preview or staging deployment |
+| Production  | live customer operations             | real customer data only | dedicated production project | production deployment         |
 
 Each environment must use distinct:
 
@@ -78,6 +78,24 @@ Each channel plugs into the same policy and send-decision platform:
 - email later
 
 Website chat is the first production implementation slice because it offers the tightest operational loop, the least external-provider complexity, and the easiest path for rapid human fallback.
+
+### 4.3 First-slice provider runtime
+
+The first implementation slice should activate real providers through a shared
+server-only runtime layer instead of wiring feature-specific adapters.
+
+That runtime layer is responsible for:
+
+- resolving the active tenant/provider/model configuration
+- loading credentials by `secret_ref` from server env only
+- routing `Anthropic` for chat generation
+- routing `OpenAI` for embeddings
+- normalizing provider usage, latency, finish reason, and error categories
+- preserving deterministic mock fallback for local safety and tests
+
+Both `copilot` and `website-chat draft` flows should call the same runtime so
+prompt packaging, retrieval context rules, retry behavior, and audit metadata do
+not drift by surface.
 
 ## 5. Core Runtime Flow
 
@@ -179,6 +197,15 @@ Production activation should follow a staged ladder.
 - human agents remain the send authority
 - telemetry is collected on grounding, confidence, edit rate, latency, and escalation patterns
 
+### Phase 2A. Real-provider draft activation
+
+- `Anthropic` is enabled for internal answer generation
+- `OpenAI` embeddings are enabled for ingestion and retrieval
+- `copilot` drafts are available to agents
+- website chat generates internal drafts from live inbound traffic
+- customer delivery remains blocked regardless of provider state
+- production activation is gated per environment and per tenant
+
 ### Phase 3. Strict-boundary website chat auto-send
 
 - auto-send only for grounded, low-risk, pre-sales informational replies
@@ -234,24 +261,31 @@ The first live auto-send slice must use a strict sales-safe boundary.
 
 This policy should be explicit in code and auditable in logs.
 
-## 9. Website Chat First-Live Slice
+## 9. First Implementation Slice: Live Providers + Draft Flows
 
-The first production implementation slice should deliver:
+The first approved implementation slice is narrower than first-live auto-send.
+It should make the AI runtime real and production-ready while preserving the
+current no-send safety boundary.
 
-- real production website chat inbound and outbound
-- AI drafting on real traffic
-- shadow-mode “would this have auto-sent?” scoring
-- strict-boundary live auto-send for low-risk informational replies
+This slice should deliver:
+
+- real `Anthropic` generation for internal drafts
+- real `OpenAI` embeddings for knowledge ingestion and retrieval
+- agent-facing `copilot` drafts in the app
+- website-chat internal drafts for live inbound traffic
+- grounding, citation, escalation, usage, latency, and provider-status capture
+- explicit environment and tenant activation controls
 - obvious human fallback in the inbox
 
-Day-one live auto-send should still exclude:
+This slice must not deliver:
 
-- negotiation
-- uncertain availability
-- nuanced pricing disclaimers
-- complaints
-- complex consent cases
-- weakly grounded answers
+- automatic customer sending
+- provider secrets in the browser, prompts, logs, or audit payloads
+- draft generation that bypasses grounding or tenant AI policy
+- production dependence on unapproved knowledge
+
+The follow-on slice may enable strict-boundary website-chat auto-send, but only
+after production evidence from draft mode is acceptable.
 
 ## 10. Environment And Infrastructure Requirements
 
@@ -285,6 +319,14 @@ The release path should require:
 - red-team prompts for prompt injection, stale inventory, unsupported claims, and cross-tenant retrieval
 - incident drills for kill switch, provider outage, bad-output spike, and rollback
 
+For the first real-provider draft slice, launch gates should additionally prove:
+
+- provider adapters return normalized domain-safe results
+- missing, invalid, or wrong-provider secrets fail closed
+- approved knowledge can produce grounded drafts with citations
+- weak grounding, provider timeout, auth failure, and rate limit cases become safe draft suppression or escalation outcomes
+- website inbound traffic can create internal drafts without creating any customer delivery event
+
 The widening gate from strict auto-send to broader confidence-based auto-send should require:
 
 - low policy miss rate
@@ -307,6 +349,15 @@ Repo-first hardening should produce:
 - channel orchestration boundaries for website chat first
 - rollout flags for shadow, draft-only, strict auto-send, and expanded auto-send
 - cutover and incident runbooks
+
+For the first implementation slice, repo deliverables should also include:
+
+- server-only `Anthropic` chat adapter
+- server-only `OpenAI` embedding adapter
+- provider-runtime resolution for active tenant model selection
+- mock-preserving fallback behavior for tests and local safety
+- settings and audit visibility for provider health and active model state
+- environment-gated activation wiring for local, staging, and production drafts
 
 ## 13. Risks
 
@@ -337,6 +388,8 @@ This design is successful when:
 - the repo can produce a clean, repeatable release candidate
 - staging and production are clearly separated
 - website chat can go live safely before other channels
-- the AI runtime supports shadow, draft-only, and strict auto-send modes
+- the AI runtime supports real-provider shadow and draft-only modes before any auto-send rollout
+- `Anthropic` powers internal draft generation and `OpenAI` powers retrieval embeddings through the shared runtime
+- agents can use `copilot` and website-chat drafts on live traffic without any customer auto-send
 - broad auto-send expansion has explicit acceptance gates
 - future WhatsApp and email activation can reuse the same orchestration model without redesigning the core send-decision path
