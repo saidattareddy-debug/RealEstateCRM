@@ -33,6 +33,19 @@ const serverSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
+  /**
+   * Phase-7B live-provider activation gate (server-side, default OFF). This is
+   * the OPERATOR half of a two-key system: it expresses an operator's intent to
+   * activate real provider adapters. It can NEVER, on its own, cause an external
+   * send or socket — the real adapters are still inert (see
+   * `LIVE_PROVIDER_ACTIVATION_IMPLEMENTED` in `@re/domain`). Must stay `false`
+   * under the controlled-MVP profile in production (enforced below). Never a
+   * writable browser setting.
+   */
+  INTEGRATION_LIVE_PROVIDERS_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
   ANTHROPIC_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
@@ -151,6 +164,13 @@ export function checkDeploymentReady(
       problems.push('controlled_mvp production must keep RESPONDER_LIVE_SENDING disabled');
     if (raw.BINARY_MEDIA_RETRIEVAL_ENABLED === 'true')
       problems.push('controlled_mvp production must keep binary media retrieval disabled');
+    if (
+      server.INTEGRATION_LIVE_PROVIDERS_ENABLED ||
+      raw.INTEGRATION_LIVE_PROVIDERS_ENABLED === 'true'
+    )
+      problems.push(
+        'controlled_mvp production must keep INTEGRATION_LIVE_PROVIDERS_ENABLED=false (Phase 7B)',
+      );
   }
 
   // No server secret may be exposed through a browser-visible NEXT_PUBLIC_* var.
@@ -192,6 +212,18 @@ export function deploymentProfile(
   env: Record<string, string | undefined> = process.env,
 ): DeploymentProfile {
   return env.DEPLOYMENT_PROFILE === 'full' ? 'full' : 'controlled_mvp';
+}
+
+/**
+ * Phase-7B live-provider activation gate (server-side, default OFF). The OPERATOR
+ * half of the two-key activation system: it never, by itself, enables a real send
+ * (the real adapters remain inert — see `LIVE_PROVIDER_ACTIVATION_IMPLEMENTED` in
+ * `@re/domain`). While false, the registry never returns a live adapter.
+ */
+export function liveProviderActivationEnabled(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return env.INTEGRATION_LIVE_PROVIDERS_ENABLED === 'true';
 }
 
 export { clientSchema, serverSchema };

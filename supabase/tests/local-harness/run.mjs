@@ -81,6 +81,7 @@ try {
     '0025_external_event_envelopes.sql',
     '0026_callback_idempotency.sql',
     '0027_role_grants.sql',
+    '0028_demo_seed_runs.sql',
   ]) {
     let s = readFileSync(`${MIG}/${f}`, 'utf8');
     if (f === '0001_extensions.sql')

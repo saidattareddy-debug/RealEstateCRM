@@ -37,6 +37,7 @@ const MIGRATIONS = [
   '0025_external_event_envelopes.sql',
   '0026_callback_idempotency.sql',
   '0027_role_grants.sql',
+  '0028_demo_seed_runs.sql',
 ];
 
 export const SEED_TENANT_A = '11111111-1111-1111-1111-111111111111';

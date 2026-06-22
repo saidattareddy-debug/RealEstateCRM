@@ -36,6 +36,9 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
   private op: 'insert' | 'update' | 'select' = 'select';
   private payload: Row | null = null;
   private filters: Array<[string, unknown]> = [];
+  private isFilters: Array<[string, unknown]> = [];
+  private orderSpec: { col: string; ascending: boolean } | null = null;
+  private limitN: number | null = null;
   private wantSingle = false;
   private wantMaybe = false;
 
@@ -62,6 +65,19 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
     this.filters.push([col, val]);
     return this;
   }
+  /** `.is(col, null)` — NULL-aware equality (null and undefined are equal). */
+  is(col: string, val: unknown) {
+    this.isFilters.push([col, val]);
+    return this;
+  }
+  order(col: string, opts?: { ascending?: boolean }) {
+    this.orderSpec = { col, ascending: opts?.ascending !== false };
+    return this;
+  }
+  limit(n: number) {
+    this.limitN = n;
+    return this;
+  }
   single() {
     this.wantSingle = true;
     return this.run();
@@ -72,9 +88,23 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
   }
 
   private rows(): Row[] {
-    return (this.db.tables[this.table] ?? []).filter((r) =>
-      this.filters.every(([c, v]) => r[c] === v),
+    let out = (this.db.tables[this.table] ?? []).filter(
+      (r) =>
+        this.filters.every(([c, v]) => r[c] === v) &&
+        // NULL-aware: `.is(col, null)` matches null AND undefined.
+        this.isFilters.every(([c, v]) => (r[c] ?? null) === (v ?? null)),
     );
+    if (this.orderSpec) {
+      const { col, ascending } = this.orderSpec;
+      out = [...out].sort((a, b) => {
+        const av = a[col] as never;
+        const bv = b[col] as never;
+        if (av === bv) return 0;
+        return (av < bv ? -1 : 1) * (ascending ? 1 : -1);
+      });
+    }
+    if (this.limitN !== null) out = out.slice(0, this.limitN);
+    return out;
   }
 
   private run(): Promise<{ data: unknown; error: unknown }> {

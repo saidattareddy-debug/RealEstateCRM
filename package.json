@@ -29,7 +29,10 @@
     "db:production:preflight": "TARGET_ENV=production node scripts/db-preflight.mjs",
     "hosted:rls": "node scripts/hosted-rls-verification.mjs",
     "perf:baseline": "node scripts/staging-performance-baseline.mjs",
-    "test:e2e:compile": "tsc -p e2e/tsconfig.json --noEmit"
+    "test:e2e:compile": "tsc -p e2e/tsconfig.json --noEmit",
+    "demo:seed": "node scripts/demo-seed.mjs",
+    "demo:status": "node scripts/demo-status.mjs",
+    "demo:reset": "node scripts/demo-reset.mjs"
   },
   "devDependencies": {
     "@eslint/js": "9.17.0",

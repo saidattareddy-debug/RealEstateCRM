@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { checkDeploymentReady, getServerEnv, type ServerEnv } from '../env';
+import {
+  checkDeploymentReady,
+  getServerEnv,
+  liveProviderActivationEnabled,
+  type ServerEnv,
+} from '../env';
 
 const base = (over: Partial<ServerEnv> = {}): ServerEnv =>
   ({
@@ -7,6 +12,7 @@ const base = (over: Partial<ServerEnv> = {}): ServerEnv =>
     DEPLOYMENT_MODE: 'shared',
     DEPLOYMENT_PROFILE: 'controlled_mvp',
     INTEGRATION_PUBLIC_WEBHOOKS_ENABLED: false,
+    INTEGRATION_LIVE_PROVIDERS_ENABLED: false,
     SUPABASE_SERVICE_ROLE_KEY: 'svc-secret',
     SESSION_SIGNING_SECRET: 'sess-secret',
     EMBEDDINGS_PROVIDER: 'openai',
@@ -62,6 +68,24 @@ describe('checkDeploymentReady', () => {
     expect(r.problems.join(' ')).toMatch(/LIVE_SEND_MASTER_SWITCH/);
   });
 
+  it('controlled_mvp production with live-provider activation on is NOT ready (typed flag)', () => {
+    const r = checkDeploymentReady(
+      base({ INTEGRATION_LIVE_PROVIDERS_ENABLED: true }),
+      completeOpts,
+    );
+    expect(r.ok).toBe(false);
+    expect(r.problems.join(' ')).toMatch(/INTEGRATION_LIVE_PROVIDERS_ENABLED/);
+  });
+
+  it('controlled_mvp production with live-provider activation on is NOT ready (raw env)', () => {
+    const r = checkDeploymentReady(base(), {
+      ...completeOpts,
+      rawEnv: { INTEGRATION_LIVE_PROVIDERS_ENABLED: 'true' },
+    });
+    expect(r.ok).toBe(false);
+    expect(r.problems.join(' ')).toMatch(/INTEGRATION_LIVE_PROVIDERS_ENABLED/);
+  });
+
   it('a secret exposed through a NEXT_PUBLIC_* variable is NOT ready', () => {
     const r = checkDeploymentReady(base(), {
       ...completeOpts,
@@ -106,5 +130,27 @@ describe('getServerEnv production gate', () => {
 
   it('succeeds for a complete production config', () => {
     expect(() => getServerEnv(fullEnv())).not.toThrow();
+  });
+
+  it('throws when controlled_mvp production sets the live-provider flag on', () => {
+    expect(() => getServerEnv(fullEnv({ INTEGRATION_LIVE_PROVIDERS_ENABLED: 'true' }))).toThrow(
+      /INTEGRATION_LIVE_PROVIDERS_ENABLED/,
+    );
+  });
+});
+
+describe('liveProviderActivationEnabled', () => {
+  it('defaults to false (absent / any non-"true" value)', () => {
+    expect(liveProviderActivationEnabled({})).toBe(false);
+    expect(liveProviderActivationEnabled({ INTEGRATION_LIVE_PROVIDERS_ENABLED: 'false' })).toBe(
+      false,
+    );
+    expect(liveProviderActivationEnabled({ INTEGRATION_LIVE_PROVIDERS_ENABLED: '1' })).toBe(false);
+  });
+
+  it('is true only for the exact string "true"', () => {
+    expect(liveProviderActivationEnabled({ INTEGRATION_LIVE_PROVIDERS_ENABLED: 'true' })).toBe(
+      true,
+    );
   });
 });

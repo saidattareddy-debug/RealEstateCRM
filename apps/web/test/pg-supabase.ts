@@ -28,7 +28,41 @@ const REL: Record<string, Record<string, Rel>> = {
   memberships: { roles: { fk: 'role_id', refTable: 'roles', refPk: 'id' } },
 };
 
-function sqlVal(v: unknown): unknown {
+/**
+ * Postgres native `text[]` columns the canonical services insert into. A JS array
+ * destined for one of these must be passed through to `pg` as-is (pg formats the
+ * array literal). Every OTHER array — including a `string[]` going into a JSONB
+ * column such as `signals` — must be JSON-stringified. We disambiguate by COLUMN
+ * NAME (element-type heuristics are ambiguous: `signals` jsonb also holds strings).
+ */
+const TEXT_ARRAY_COLUMNS = new Set([
+  'required_citation_categories',
+  'forbidden_claims',
+  'expected_tool_calls',
+  'hard_failures',
+  'injection_categories',
+  'allowed_categories',
+  'blocked_categories',
+  'allowed_languages',
+  'enabled_languages',
+  'allowed_origins',
+  'allowed_event_types',
+  'enabled_pages',
+  'event_tables',
+  'manage_tables',
+  'outbound_tables',
+  'expected_missing',
+  'forbidden_inputs',
+  'forbidden_outcomes',
+  'initial_questions',
+  'languages',
+  'preference_signals',
+  'qualification_signals',
+  'requested_scopes',
+]);
+
+function sqlVal(v: unknown, col?: string): unknown {
+  if (Array.isArray(v) && col && TEXT_ARRAY_COLUMNS.has(col)) return v; // native PG array
   if (v !== null && typeof v === 'object' && !(v instanceof Date)) return JSON.stringify(v);
   return v;
 }
@@ -70,7 +104,12 @@ class PgQuery implements PromiseLike<Result> {
   private op: 'select' | 'insert' | 'update' | 'delete' = 'select';
   private payload: Row | Row[] | null = null;
   private cols = '*';
-  private filters: Array<{ col: string; op: '=' | 'in' | 'is'; val: unknown }> = [];
+  private filters: Array<{
+    col: string;
+    op: '=' | 'in' | 'is' | 'not' | 'neq' | '>' | '>=' | '<' | '<=';
+    val: unknown;
+  }> = [];
+  private onConflict: string | null = null;
   private limitN: number | null = null;
   private orderBy: { col: string; asc: boolean } | null = null;
   private one = false;
@@ -85,6 +124,12 @@ class PgQuery implements PromiseLike<Result> {
   insert(obj: Row | Row[]) {
     this.op = 'insert';
     this.payload = obj;
+    return this;
+  }
+  upsert(obj: Row | Row[], opts?: { onConflict?: string }) {
+    this.op = 'insert';
+    this.payload = obj;
+    this.onConflict = opts?.onConflict ?? null;
     return this;
   }
   update(obj: Row) {
@@ -111,6 +156,46 @@ class PgQuery implements PromiseLike<Result> {
   }
   is(col: string, val: null) {
     this.filters.push({ col, op: 'is', val });
+    return this;
+  }
+  /** PostgREST `.not(col, 'is', null)` → `col is not null` (the only form used). */
+  not(col: string, op: string, val: unknown) {
+    if (op === 'is' && val === null) this.filters.push({ col, op: 'not', val: null });
+    else this.filters.push({ col, op: 'neq', val });
+    return this;
+  }
+  neq(col: string, val: unknown) {
+    this.filters.push({ col, op: 'neq', val });
+    return this;
+  }
+  gt(col: string, val: unknown) {
+    this.filters.push({ col, op: '>', val });
+    return this;
+  }
+  gte(col: string, val: unknown) {
+    this.filters.push({ col, op: '>=', val });
+    return this;
+  }
+  lt(col: string, val: unknown) {
+    this.filters.push({ col, op: '<', val });
+    return this;
+  }
+  lte(col: string, val: unknown) {
+    this.filters.push({ col, op: '<=', val });
+    return this;
+  }
+  /** PostgREST `.filter(col, operator, value)` — supports the ops used in code. */
+  filter(col: string, operator: string, val: unknown) {
+    const map: Record<string, (typeof this.filters)[number]['op']> = {
+      eq: '=',
+      neq: 'neq',
+      gt: '>',
+      gte: '>=',
+      lt: '<',
+      lte: '<=',
+    };
+    if (operator === 'is' && val === null) this.filters.push({ col, op: 'is', val: null });
+    else this.filters.push({ col, op: map[operator] ?? '=', val });
     return this;
   }
   order(col: string, opts?: { ascending?: boolean }) {
@@ -143,6 +228,7 @@ class PgQuery implements PromiseLike<Result> {
     if (this.filters.length === 0) return '';
     const parts = this.filters.map((f) => {
       if (f.op === 'is') return `"${f.col}" is null`;
+      if (f.op === 'not') return `"${f.col}" is not null`;
       if (f.op === 'in') {
         const arr = f.val as unknown[];
         const ph = arr.map((v) => {
@@ -152,7 +238,8 @@ class PgQuery implements PromiseLike<Result> {
         return `"${f.col}" in (${ph.join(',')})`;
       }
       params.push(f.val);
-      return `"${f.col}" = $${params.length}`;
+      const sqlOp = f.op === 'neq' ? '<>' : f.op === '=' ? '=' : f.op;
+      return `"${f.col}" ${sqlOp} $${params.length}`;
     });
     return ' where ' + parts.join(' and ');
   }
@@ -177,14 +264,23 @@ class PgQuery implements PromiseLike<Result> {
     const params: unknown[] = [];
     const tuples = rows.map((r) => {
       const ph = cols.map((c) => {
-        params.push(sqlVal(r[c]));
+        params.push(sqlVal(r[c], c));
         return `$${params.length}`;
       });
       return `(${ph.join(',')})`;
     });
     const colList = cols.map((c) => `"${c}"`).join(',');
     const ret = this.cols && this.cols !== '*' ? this.cols : '*';
-    const sql = `insert into "${this.table}" (${colList}) values ${tuples.join(',')} returning ${ret}`;
+    let conflict = '';
+    if (this.onConflict) {
+      const keys = this.onConflict
+        .split(',')
+        .map((k) => `"${k.trim()}"`)
+        .join(',');
+      // Upsert: ignore duplicates (matches the only caller's ignoreDuplicates).
+      conflict = ` on conflict (${keys}) do nothing`;
+    }
+    const sql = `insert into "${this.table}" (${colList}) values ${tuples.join(',')}${conflict} returning ${ret}`;
     const res = await this.pool.query(sql, params);
     if (this.one || this.maybe) return { data: res.rows[0] ?? null, error: null };
     return { data: res.rows, error: null };
@@ -195,7 +291,7 @@ class PgQuery implements PromiseLike<Result> {
     const cols = Object.keys(obj);
     const params: unknown[] = [];
     const sets = cols.map((c) => {
-      params.push(sqlVal(obj[c]));
+      params.push(sqlVal(obj[c], c));
       return `"${c}" = $${params.length}`;
     });
     const where = this.where(params);
@@ -249,6 +345,7 @@ class PgQuery implements PromiseLike<Result> {
         lhs = `${aliasOf[en!]}."${c}"`;
       } else lhs = `b."${f.col}"`;
       if (f.op === 'is') return `${lhs} is null`;
+      if (f.op === 'not') return `${lhs} is not null`;
       if (f.op === 'in') {
         const arr = f.val as unknown[];
         const ph = arr.map((v) => {
@@ -258,7 +355,8 @@ class PgQuery implements PromiseLike<Result> {
         return `${lhs} in (${ph.join(',')})`;
       }
       params.push(f.val);
-      return `${lhs} = $${params.length}`;
+      const sqlOp = f.op === 'neq' ? '<>' : f.op === '=' ? '=' : f.op;
+      return `${lhs} ${sqlOp} $${params.length}`;
     });
     const where = wparts.length ? ' where ' + wparts.join(' and ') : '';
 

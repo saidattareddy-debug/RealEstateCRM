@@ -29,3 +29,5 @@ export * from './ai-live-send';
 export * from './scoring';
 export * from './matching';
 export * from './integrations';
+export * from './integration-activation';
+export * from './ai-live-activation';

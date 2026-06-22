@@ -39,6 +39,12 @@ const SUB_PAGES: { href: string; title: string; description: string }[] = [
     title: 'Usage limits',
     description: 'Token, retrieval, tool-call and retry limits for this workspace.',
   },
+  {
+    href: '/settings/ai/activation',
+    title: 'Responder activation',
+    description:
+      'Two-person workflow + kill switch to stage automatic replies. Live sending stays off.',
+  },
 ];
 
 export default async function AiSettingsPage() {

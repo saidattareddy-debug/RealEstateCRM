@@ -6,38 +6,114 @@ Living record of build progress. Updated at the end of every phase (and at meani
 
 ## Current state
 
-|                  |                                                                                                                                                                                                                                                                                                                                |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Active phase** | Phase 7A — External Sources & Channel Integration Foundation (mock / simulation / record-only; no external IO)                                                                                                                                                                                                                 |
-| **Status**       | Core CRM — Deployable for Controlled MVP / Phase 7A — Locally Complete and Simulated / Phase 7B — Ready for External Provider Review / Public Provider Webhooks — Disabled by Default / Live WhatsApp/Email — Not Connected / Automatic Customer Sending — Impossible                                                          |
-| **Date**         | 2026-06-20                                                                                                                                                                                                                                                                                                                     |
-| **Next phase**   | Phase 7B — Live Provider Activation (Ready for Review). Requires external credentials/accounts, verified webhook domains, provider review, paid + compliance approval, live Supabase + production queues/monitoring. Not started.                                                                                              |
-| **Gates**        | format ✅ · lint 0-err ✅ · typecheck ✅ · 341 unit ✅ · 16 web-server ✅ · **32 embedded-PG (real service: message + lead + human-send + callback + replay executor) ✅** · harness 349/349 ✅ · migration-order 26 ✅ · secret-scan (expanded) ✅ · no-external-IO static+runtime ✅ · e2e compile ✅ · build ✅ (0001–0026) |
+|                  |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Active phase** | Phase 7A — External Sources & Channel Integration Foundation (mock / simulation / record-only; no external IO)                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| **Status**       | Core CRM — Deployable for Controlled MVP / Phase 7A — Locally Complete and Simulated / Phase 7B — Ready for External Provider Review / Public Provider Webhooks — Disabled by Default / Live WhatsApp/Email — Not Connected / Automatic Customer Sending — Impossible                                                                                                                                                                                                                                                                                                              |
+| **Date**         | 2026-06-20                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| **Next phase**   | Phase 7B — Live Provider Activation (**go-live prep landed; NOT activated**). Operator-facing prerequisites, the runtime activation flag (default OFF), a pure activation-decision engine that can never activate, and a full go-live runbook are now in the repo ([`PHASE_7B_GO_LIVE.md`](./PHASE_7B_GO_LIVE.md)). Actual activation still requires external credentials/accounts, verified webhook domains, provider review, paid + compliance approval, the real network adapters (a separate engineering PR), and live Supabase + production queues/monitoring. Not activated. |
+| **Gates**        | format ✅ · lint 0-err ✅ · typecheck ✅ · 341 unit ✅ · 16 web-server ✅ · **32 embedded-PG (real service: message + lead + human-send + callback + replay executor) ✅** · harness 349/349 ✅ · migration-order 26 ✅ · secret-scan (expanded) ✅ · no-external-IO static+runtime ✅ · e2e compile ✅ · build ✅ (0001–0026)                                                                                                                                                                                                                                                     |
 
 **Controlled-MVP deployment readiness:** see [`CONTROLLED_MVP_DEPLOYMENT_AUDIT.md`](./CONTROLLED_MVP_DEPLOYMENT_AUDIT.md). All locally-verifiable gates pass and production env-validation now fails startup on incomplete prod config; the go/no-go decision is **NO-GO — pending hosted staging** (provisioning, backup/restore drill, hosted RLS, end-to-end browser smoke, observability, performance baseline cannot be executed in this build environment). "Production Controlled MVP Approved" is withheld until staging verification passes with a named approver. A repeatable **hosted-staging execution pack** is now in the repo: [`HOSTED_STAGING_RUNBOOK.md`](./HOSTED_STAGING_RUNBOOK.md), [`ENVIRONMENT_MATRIX.md`](./ENVIRONMENT_MATRIX.md), [`HOSTED_RLS_VERIFICATION.md`](./HOSTED_RLS_VERIFICATION.md), [`CONTROLLED_MVP_SMOKE_TEST.md`](./CONTROLLED_MVP_SMOKE_TEST.md), [`BACKUP_RESTORE_DRILL.md`](./BACKUP_RESTORE_DRILL.md), [`PERFORMANCE_BASELINE.md`](./PERFORMANCE_BASELINE.md), staging-safe scripts (`db:staging:preflight`, `db:production:preflight`, `hosted:rls`, `perf:baseline`), a `/api/health` endpoint, log-redaction helpers, and a compilable Playwright skeleton (`test:e2e:compile`).
 
 ## Phase tracker
 
-| Phase | Title                                                                            | Status                                           |
-| ----- | -------------------------------------------------------------------------------- | ------------------------------------------------ |
-| 0     | Architecture & documentation                                                     | ✅ Complete                                      |
-| 1     | Foundation (repo, app, design system, auth, tenancy, RLS, shell)                 | ✅ Complete                                      |
-| 1.1   | Foundation Hardening (audit logging, full RLS tests, states, mobile nav, CI)     | ✅ Complete                                      |
-| 2     | Projects & inventory                                                             | ✅ Complete                                      |
-| 3     | Lead CRM (ingestion, dedupe, pipeline, assignment)                               | ✅ Complete                                      |
-| 3.1   | CRM Conversation Readiness (idempotency, durable jobs, calls, qual, exports)     | ✅ Complete                                      |
-| 4     | Conversations (inbox, widget, takeover, summaries, consent/DNC)                  | ✅ Complete                                      |
-| 4.1   | AI Safety & Inbox Completion (guard, lifecycle, history, notes, consent)         | ✅ Complete (local)                              |
-| 5A    | Knowledge, RAG & AI Safety Foundation (providers, grounding, escalation, eval)   | ✅ Complete (local)                              |
-| 5B.0  | Record-Only Responder (live-send safety core, runtime/outbox schema, activation) | ✅ Complete (local, record-only)                 |
-| 5B.1  | Controlled Live-Send Activation                                                  | ⬜ Not started; external approval required       |
-| 6A    | Deterministic Lead Scoring (versioned, explainable, advisory)                    | ✅ Core complete (local; approved UI deferral)   |
-| 6B    | Project Matching (deterministic, inventory-aware, advisory)                      | ✅ Complete (local, advisory)                    |
-| 7A    | External Sources & Channel Integration Foundation (mock/simulation/record-only)  | ✅ Locally complete & simulated (controlled MVP) |
-| 7B    | Live Provider Activation                                                         | ⬜ Ready for review; external approval required  |
-| 8     | Automations & visits                                                             | ⬜ Not started                                   |
-| 9     | Analytics & administration                                                       | ⬜ Not started                                   |
-| 10    | Hardening                                                                        | ⬜ Not started                                   |
+| Phase | Title                                                                            | Status                                                                                      |
+| ----- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| 0     | Architecture & documentation                                                     | ✅ Complete                                                                                 |
+| 1     | Foundation (repo, app, design system, auth, tenancy, RLS, shell)                 | ✅ Complete                                                                                 |
+| 1.1   | Foundation Hardening (audit logging, full RLS tests, states, mobile nav, CI)     | ✅ Complete                                                                                 |
+| 2     | Projects & inventory                                                             | ✅ Complete                                                                                 |
+| 3     | Lead CRM (ingestion, dedupe, pipeline, assignment)                               | ✅ Complete                                                                                 |
+| 3.1   | CRM Conversation Readiness (idempotency, durable jobs, calls, qual, exports)     | ✅ Complete                                                                                 |
+| 4     | Conversations (inbox, widget, takeover, summaries, consent/DNC)                  | ✅ Complete                                                                                 |
+| 4.1   | AI Safety & Inbox Completion (guard, lifecycle, history, notes, consent)         | ✅ Complete (local)                                                                         |
+| 5A    | Knowledge, RAG & AI Safety Foundation (providers, grounding, escalation, eval)   | ✅ Complete (local)                                                                         |
+| 5B.0  | Record-Only Responder (live-send safety core, runtime/outbox schema, activation) | ✅ Complete (local, record-only)                                                            |
+| 5B.1  | Controlled Live-Send Activation                                                  | 🟡 Go-live prep landed (governance + UI; switch OFF); activation requires external approval |
+| 6A    | Deterministic Lead Scoring (versioned, explainable, advisory)                    | ✅ Core complete (local; approved UI deferral)                                              |
+| 6B    | Project Matching (deterministic, inventory-aware, advisory)                      | ✅ Complete (local, advisory)                                                               |
+| 7A    | External Sources & Channel Integration Foundation (mock/simulation/record-only)  | ✅ Locally complete & simulated (controlled MVP)                                            |
+| 7B    | Live Provider Activation                                                         | ⬜ Ready for review; external approval required                                             |
+| 8     | Automations & visits                                                             | ⬜ Not started                                                                              |
+| 9     | Analytics & administration                                                       | ⬜ Not started                                                                              |
+| 10    | Hardening                                                                        | ⬜ Not started                                                                              |
+
+## Phase 5B.1 — Controlled Live-Send Activation: Go-Live Preparation (nothing sends, 2026-06-22)
+
+Safe preparation for an _eventual_ live-send activation, built up to — not across —
+the master switch. **No switch was flipped; automatic customer sending remains
+impossible.** A two-key model gates it: the operator key (a fully-approved two-person
+request + rollout window) and the engineering key `LIVE_SEND_MASTER_SWITCH`
+(compile-time `false`).
+
+- **Governance engine** `packages/domain/src/ai-live-activation.ts`:
+  `evaluateLiveActivation` returns `liveSendingPermitted = operatorReady &&
+masterSwitchOn` → **always false** (proven by `ai-live-activation.test.ts` across all
+  192 operator-input combinations); `evaluateApprovalCompleteness` (Product +
+  Engineering + Legal, no rejection, requester ≠ approver); `SENDABLE_MODES` /
+  `isApplicableMode` so the strongest applicable mode is `live_candidate` (still
+  suppressed). Blocker labels for the UI.
+- **Activation service** `apps/web/src/lib/responder/activation.ts` drives the
+  Phase-5B.0 tables (`responder_channel_settings`, `responder_activation_requests`,
+  `responder_activation_approvals`): request → multi-role approval (DB trigger forbids
+  requester self-approval) → apply-approved-mode (clamped to a non-sendable mode) →
+  kill switch. Permission-gated + audited (`responder.activation.requested/approved`,
+  `responder.channel.updated`, `responder.killswitch.activated`).
+- **UI** `…/settings/ai/activation` (+ server actions): a prominent "automatic sending
+  is OFF (master switch)" banner, per-channel current mode / kill-switch / decision
+  cards, the sign-off ledger, and request/approve/apply/kill controls — each gated by
+  the relevant `responder.*` permission.
+- **Docs** [`PHASE_5B1_GO_LIVE.md`](./PHASE_5B1_GO_LIVE.md): the two-key model,
+  stop-conditions, operator pre-activation checklist, a two-person **sign-off ledger**,
+  the staged rollout, the kill-switch drill, and per-step verification gates.
+
+**Gates (sandbox copy):** format ✅ · lint 0-err ✅ · typecheck ✅ · **366 unit** ✅
+(+ governance engine) · **52 web-server** ✅ (+ activation service) · RLS harness
+349/349 (unchanged — no schema/DB change) ✅ · secret-scan ✅ · no-external-IO ✅ ·
+build ✅. All four safety switches remain frozen; the `ai_runs` /
+`ai_responder_decisions` / `send_candidate_status` CHECKs are untouched.
+
+**Not done (still 5B.1 proper, external/engineering):** the master-switch flip + the
+CHECK-widening release PR, an idempotent PGMQ delivery worker, AI provider credentials,
+a live delivery channel (Phase 7B), paid AI usage, and legal/product sign-off. None
+performed.
+
+## Phase 7B — Go-Live Preparation (no credentials, nothing sends, 2026-06-22)
+
+Safe preparation for an _eventual_ live-provider activation, built entirely up to —
+and not across — the stop line. **No provider was connected, no switch was flipped,
+nothing sends.** A two-key model makes activation impossible by configuration alone:
+
+- **Operator key** — new server env `INTEGRATION_LIVE_PROVIDERS_ENABLED` (default
+  `false`; `liveProviderActivationEnabled()` helper in `packages/config`). The
+  production env validator now rejects it being `true` under the `controlled_mvp`
+  profile (alongside the existing public-webhooks / live-send / binary-media gates).
+- **Engineering key** — `LIVE_PROVIDER_ACTIVATION_IMPLEMENTED` (compile-time `false`)
+  in the new pure module `packages/domain/src/integration-activation.ts`.
+  `evaluateProviderActivation()` returns `allowed = operationalReady &&
+codePathImplemented`; because the engineering key is `false`, `allowed` is **always
+  false** — proven by `integration-activation.test.ts` across all 512 operator-input
+  combinations. Blockers + human-readable labels are surfaced for the runbook/UI.
+- **Registry gate** — `resolveActivationAdapter()` (`apps/web/src/lib/integrations/
+registry.ts`) routes every "live" request through the decision and therefore always
+  returns the inert real-adapter stub (throws `not_enabled_phase_7a`); the structured
+  decision is returned for observability. `activation-gate.web.test.ts` proves the
+  registry stays inert even with the flag forced ON and `DEPLOYMENT_PROFILE=full`.
+- **Docs** — [`PHASE_7B_GO_LIVE.md`](./PHASE_7B_GO_LIVE.md): the two-key model, the
+  stop-conditions, a credential/env **intake matrix**, an operator pre-activation
+  checklist, the staged activation sequence, per-step verification gates, and the kill
+  switch / rollback. `.env.example` documents the safety gates.
+
+**Gates (executed on the sandbox copy):** format ✅ · lint 0-err ✅ · typecheck ✅ ·
+**355 unit** ✅ (+ activation engine + env flag) · **44 web-server** ✅ (+ activation
+gate) · embedded-PG ✅ · RLS harness 349/349 (unchanged — no schema/DB change) ✅ ·
+secret-scan ✅ · no-external-IO ✅ · build ✅. All four safety switches remain frozen.
+
+**Not done (still Phase 7B proper, external/engineering):** real network adapters,
+provider accounts/credentials, webhook-domain verification, provider app review, paid
+
+- compliance approval, live Supabase + PGMQ, and any switch flip. None performed.
 
 ## Phase 7A — External Integration Foundation (mock / simulation / record-only, 2026-06-20)
 
