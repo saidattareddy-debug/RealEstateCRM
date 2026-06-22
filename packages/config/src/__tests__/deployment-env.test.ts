@@ -68,22 +68,20 @@ describe('checkDeploymentReady', () => {
     expect(r.problems.join(' ')).toMatch(/LIVE_SEND_MASTER_SWITCH/);
   });
 
-  it('controlled_mvp production with live-provider activation on is NOT ready (typed flag)', () => {
+  it('controlled_mvp production may enable live draft providers while send switches stay off', () => {
     const r = checkDeploymentReady(
       base({ INTEGRATION_LIVE_PROVIDERS_ENABLED: true }),
       completeOpts,
     );
-    expect(r.ok).toBe(false);
-    expect(r.problems.join(' ')).toMatch(/INTEGRATION_LIVE_PROVIDERS_ENABLED/);
+    expect(r.ok).toBe(true);
   });
 
-  it('controlled_mvp production with live-provider activation on is NOT ready (raw env)', () => {
+  it('controlled_mvp production also allows the raw live-provider flag', () => {
     const r = checkDeploymentReady(base(), {
       ...completeOpts,
       rawEnv: { INTEGRATION_LIVE_PROVIDERS_ENABLED: 'true' },
     });
-    expect(r.ok).toBe(false);
-    expect(r.problems.join(' ')).toMatch(/INTEGRATION_LIVE_PROVIDERS_ENABLED/);
+    expect(r.ok).toBe(true);
   });
 
   it('a secret exposed through a NEXT_PUBLIC_* variable is NOT ready', () => {
@@ -132,10 +130,10 @@ describe('getServerEnv production gate', () => {
     expect(() => getServerEnv(fullEnv())).not.toThrow();
   });
 
-  it('throws when controlled_mvp production sets the live-provider flag on', () => {
-    expect(() => getServerEnv(fullEnv({ INTEGRATION_LIVE_PROVIDERS_ENABLED: 'true' }))).toThrow(
-      /INTEGRATION_LIVE_PROVIDERS_ENABLED/,
-    );
+  it('allows controlled_mvp production to enable live draft providers', () => {
+    expect(() =>
+      getServerEnv(fullEnv({ INTEGRATION_LIVE_PROVIDERS_ENABLED: 'true' })),
+    ).not.toThrow();
   });
 });
 

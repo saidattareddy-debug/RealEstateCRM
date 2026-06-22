@@ -47,6 +47,7 @@ const upsertProviderSchema = z.object({
   id: z.string().uuid().optional(),
   kind: z.enum(['chat', 'embedding']),
   adapter: z.enum(['mock', 'external']),
+  vendor: z.enum(['mock', 'anthropic', 'openai', 'gemini']),
   displayName: z.string().trim().min(1).max(120),
   // Only the env-var NAME is ever accepted. Empty => no credential reference.
   secretRef: secretRefSchema.optional().nullable(),
@@ -70,6 +71,18 @@ export async function upsertProviderConfig(input: UpsertProviderInput): Promise<
   const parsed = upsertProviderSchema.safeParse(input);
   if (!parsed.success) return { error: 'Invalid provider configuration.' };
   const d = parsed.data;
+  if (d.adapter === 'mock' && d.vendor !== 'mock') {
+    return { error: 'Mock providers must use the mock vendor.' };
+  }
+  if (d.adapter === 'external' && d.vendor === 'mock') {
+    return { error: 'External providers must declare a real vendor.' };
+  }
+  if (d.kind === 'chat' && d.vendor === 'openai') {
+    return { error: 'This slice supports Anthropic for chat generation.' };
+  }
+  if (d.kind === 'embedding' && d.vendor !== 'mock' && d.vendor !== 'openai') {
+    return { error: 'This slice supports OpenAI for embeddings.' };
+  }
 
   const secretRef = d.secretRef && d.secretRef.length > 0 ? d.secretRef : null;
   if (d.adapter === 'external' && !secretRef) {
@@ -87,6 +100,7 @@ export async function upsertProviderConfig(input: UpsertProviderInput): Promise<
     tenant_id: ctx.activeTenantId,
     kind: d.kind,
     adapter: d.adapter,
+    vendor: d.vendor,
     display_name: d.displayName,
     secret_ref: secretRef, // env var NAME only — never the secret value
     base_url: d.baseUrl && d.baseUrl.length > 0 ? d.baseUrl : null,
@@ -118,7 +132,13 @@ export async function upsertProviderConfig(input: UpsertProviderInput): Promise<
     entityType: 'ai_provider_config',
     entityId: id ?? null,
     // Safe summary only: never the secret value. secret_ref is just an env name.
-    newValues: { kind: d.kind, adapter: d.adapter, available, secretRefPresent: secretRef != null },
+    newValues: {
+      kind: d.kind,
+      adapter: d.adapter,
+      vendor: d.vendor,
+      available,
+      secretRefPresent: secretRef != null,
+    },
   });
   revalidatePath('/settings/ai/providers');
   revalidatePath('/settings/ai');

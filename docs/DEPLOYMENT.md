@@ -1,6 +1,6 @@
 # Deployment
 
-Derived from [`MASTER_SPEC.md`](./MASTER_SPEC.md) §3, §28–29, §33. Web app on Vercel; data/auth/storage/functions on Supabase. Three environments: **local**, **staging**, **production**. This document is the operational runbook skeleton; concrete commands are finalized in Phase 1 when the repo and lockfile exist.
+Derived from [`MASTER_SPEC.md`](./MASTER_SPEC.md) §3, §28–29, §33. Web app on Vercel; data/auth/storage/functions on Supabase. Three environments: **local**, **staging**, **production**. This document is the repo-side deployment and release runbook; the hosted execution steps live in [`HOSTED_STAGING_RUNBOOK.md`](./HOSTED_STAGING_RUNBOOK.md).
 
 ---
 
@@ -14,21 +14,26 @@ Derived from [`MASTER_SPEC.md`](./MASTER_SPEC.md) §3, §28–29, §33. Web app 
 
 **Deployment modes** ([`ARCHITECTURE.md`](./ARCHITECTURE.md) §3.4): _shared_ (one Supabase for many tenants) and _dedicated enterprise_ (env-selected dedicated Supabase/domain). Same code; selection via `packages/config` env validation.
 
-## 2. Local development (Phase 1 deliverable)
+## 2. Local development
 
 1. Install toolchain: Node (pinned), `pnpm`, Supabase CLI.
 2. `pnpm install` (exact versions from lockfile).
 3. `supabase start` — local Postgres + Auth + Storage + Edge runtime.
 4. Apply migrations + seed: `supabase db reset` (runs `supabase/migrations` then `supabase/seed`).
-5. Copy `.env.example` → `.env.local`; fill non-secret local values (validated at boot).
+5. Copy `.env.example` → `.env.local`; fill the local values (validated at boot).
 6. `pnpm dev` — runs `apps/web`.
+
+Repo-root operator scripts (`pnpm dev`, `pnpm demo:seed`, `pnpm demo:status`, `pnpm demo:reset`)
+auto-load the repo-root `.env.local`.
 
 ## 3. Environment variables
 
-A committed `.env.example` documents every variable; `packages/config` validates them with Zod at startup and **fails fast** on missing/invalid values. Categories:
+A committed `.env.example` documents every variable; `packages/config` validates them with Zod at startup and **fails fast** on missing/invalid values. The full environment contract is in [`ENVIRONMENT_MATRIX.md`](./ENVIRONMENT_MATRIX.md). Categories:
 
 - **Public (client-safe):** Supabase URL + anon key, app URL, deployment mode.
-- **Server-only secrets:** Supabase service-role key, AI provider keys (Anthropic/OpenAI/Gemini), WhatsApp tokens, Google OAuth client secret, Sentry DSN, webhook signing secrets.
+- **Server-only secrets:** Supabase service-role key, `SESSION_SIGNING_SECRET`, AI provider keys (Anthropic/OpenAI/Gemini), WhatsApp tokens, Google OAuth client secret, Sentry DSN, webhook signing secrets.
+- **Operator identity checks:** `STAGING_SUPABASE_PROJECT_REF`, `PRODUCTION_SUPABASE_PROJECT_REF`, and `EXPECTED_SUPABASE_PROJECT_REF` let `db:*:preflight` prove staging and production are separate before any forward-only migration is applied.
+- **Safety gates:** `INTEGRATION_PUBLIC_WEBHOOKS_ENABLED`, `INTEGRATION_LIVE_PROVIDERS_ENABLED`, `LIVE_SEND_MASTER_SWITCH`, `RESPONDER_LIVE_SENDING`, and `BINARY_MEDIA_RETRIEVAL_ENABLED` default to the safe state and must remain off for the controlled-MVP profile.
 - Secrets are **never** prefixed for client exposure and never imported into browser bundles ([`SECURITY.md`](./SECURITY.md) §4).
 
 ## 4. Database migrations
@@ -43,7 +48,15 @@ A committed `.env.example` documents every variable; `packages/config` validates
 
 ## 6. CI/CD (GitHub Actions)
 
-Pipeline: install → format check → lint → type check (strict) → unit/component tests → database tests → build → E2E (where feasible) → migration validation → dependency & secret scanning. Merges to main deploy `apps/web` to Vercel; Supabase migrations are applied via a gated job/manual approval for production.
+The repo-side release-candidate gate is:
+
+```bash
+pnpm verify:release-candidate
+```
+
+It runs the repeatable local checks in the release path: migration order, official-Supabase verification record, format, lint, typecheck, unit tests, web tests, embedded Postgres tests, E2E compile, no-external-IO guard, production build, and the post-build secret scan.
+
+GitHub Actions uses that same command in the `quality` job. The official Supabase CLI database run remains a separate `database` job because it needs Docker and the Supabase runtime.
 
 ## 7. Custom domains (white-label)
 
@@ -62,14 +75,17 @@ Each tenant may map a custom domain (`tenant_branding.custom_domain`). Process: 
 
 ## 10. Release checklist
 
-1. CI green (all layers) on the release commit.
-2. Migrations reviewed, validated on staging, backup confirmed.
-3. Env vars present and validated in target environment.
-4. Feature flags / plan limits set correctly.
-5. Integration health checks pass (WhatsApp/Gmail/Calendar where configured).
-6. Smoke test of critical journeys post-deploy.
-7. Sentry + health dashboard monitored after release.
-8. [`BUILD_STATUS.md`](./BUILD_STATUS.md) updated.
+1. `pnpm verify:release-candidate` passes on the release commit.
+2. CI green, including the official Supabase `database` job.
+3. `pnpm db:staging:preflight` passes with the correct staging project ref.
+4. Hosted staging verification pack completed (`HOSTED_STAGING_RUNBOOK.md`).
+5. Migrations reviewed, validated on staging, backup confirmed.
+6. Env vars present and validated in target environment.
+7. Feature flags / plan limits set correctly.
+8. Integration health checks pass where configured.
+9. Smoke test of critical journeys post-deploy.
+10. Sentry + health dashboard monitored after release.
+11. [`BUILD_STATUS.md`](./BUILD_STATUS.md) updated.
 
 ## 11. Observability in production (§32)
 
@@ -77,7 +93,7 @@ Structured logs with correlation IDs; Sentry error reporting; webhook/job/AI-cal
 
 ## 11a. Phase 1.1 additions (CI, env location, official DB gate)
 
-- **Env file location:** Next.js reads env from the **app directory** — put local values in `apps/web/.env.local` (copied from `.env.example`), not the repo root, or `NEXT_PUBLIC_*` values won't be inlined into the build/middleware.
+- **Env file location:** the repo-root `pnpm dev` launcher and the demo CLI now auto-load the repo-root `.env.local` before they start. If you run `next dev` directly inside `apps/web`, Next.js still follows its usual app-directory env lookup.
 - **GitHub Actions** (`.github/workflows/ci.yml`): three jobs — `quality` (frozen install → migration order → format → lint → typecheck → unit → build → secret scan), `database` (the **official** `supabase start` → `supabase db reset` → `supabase test db` on Docker), and `phase-1-1-gate` (fails until the official result is recorded). No secrets are in the workflow; build-time `NEXT_PUBLIC_*` are non-secret placeholders. **Required repository secrets:** none for CI; real deployment secrets (Supabase service-role, AI/WhatsApp/Google) live in the Vercel/Supabase projects only.
 - **Official Supabase verification gate:** run, on a Docker-capable machine:
   ```bash
@@ -161,6 +177,6 @@ stays a no-op):
 See [`PHASE_7A_AUDIT.md`](./PHASE_7A_AUDIT.md) and
 [`INTEGRATION_OPERATIONS.md`](./INTEGRATION_OPERATIONS.md).
 
-## 12. Phase-0 note
+## 12. Scope note
 
-This runbook is intentionally tool-exact-command-light because the repository and lockfile do not yet exist (docs-only Phase 0). Phase 1 fills in exact commands, the `.env.example`, the Supabase project bootstrap, and the GitHub Actions workflow files, and this document is updated alongside.
+This repo can now produce a clean release candidate and enforce the local safety/identity checks, but hosted production approval still depends on work that cannot be completed from source control alone: separate Supabase/Vercel environments, hosted migrations, hosted RLS verification, browser smoke tests, backup/restore evidence, monitoring, and named human sign-off.

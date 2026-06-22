@@ -571,6 +571,7 @@ export async function testRetrieval(
   const language =
     (parsed.data.language as SupportedLanguage | undefined) ?? detectLanguage(parsed.data.query);
   const result: RetrieveResult = await retrieveKnowledge({
+    tenantId: ctx.activeTenantId,
     projectId: parsed.data.projectId ?? null,
     query: parsed.data.query,
     language,

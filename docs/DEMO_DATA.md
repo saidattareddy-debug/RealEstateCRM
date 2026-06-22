@@ -76,6 +76,13 @@ export DEMO_SEED_CONFIRMATION=I_UNDERSTAND_THIS_CREATES_SYNTHETIC_DATA
 # (the live/webhook switches default to false and must stay false)
 ```
 
+The repo-root CLI scripts (`pnpm demo:seed`, `pnpm demo:status`, `pnpm demo:reset`)
+auto-load local env files before they run. Preferred operator flow:
+
+- keep your staging values in the repo-root `.env.local`
+- run the commands from the repository root
+- do **not** `source .env.local`; the CLI reads it directly
+
 The exact operator command, after reviewing the dry-run, is:
 
 ```bash

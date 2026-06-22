@@ -11,6 +11,7 @@
  */
 import { readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { checkDeploymentIdentity } from './deployment-identity.mjs';
 
 const MIG_DIR = fileURLToPath(new URL('../supabase/migrations', import.meta.url));
 const target = process.env.TARGET_ENV || 'staging';
@@ -49,13 +50,19 @@ const required = [
 ];
 for (const k of required) if (!process.env[k]) problems.push(`missing required env: ${k}`);
 
-// 3) Expected project reference (guards against pointing at the wrong project).
-const expectedRef = process.env.EXPECTED_SUPABASE_PROJECT_REF;
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const ref = (url.match(/https:\/\/([a-z0-9]+)\.supabase\.co/i) || [])[1];
-if (expectedRef && ref && expectedRef !== ref)
-  problems.push(`Supabase project ref mismatch: env points at '${ref}', expected '${expectedRef}'`);
-if (ref) notes.push(`supabase project ref: ${ref}`);
+// 3) Expected project reference + environment separation (guards against
+// pointing staging at production, or vice versa).
+const identity = checkDeploymentIdentity({
+  target,
+  appEnv: process.env.APP_ENV ?? null,
+  appUrl: process.env.NEXT_PUBLIC_APP_URL ?? null,
+  supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL ?? null,
+  expectedProjectRef: process.env.EXPECTED_SUPABASE_PROJECT_REF ?? null,
+  stagingProjectRef: process.env.STAGING_SUPABASE_PROJECT_REF ?? null,
+  productionProjectRef: process.env.PRODUCTION_SUPABASE_PROJECT_REF ?? null,
+});
+problems.push(...identity.problems);
+if (identity.projectRef) notes.push(`supabase project ref: ${identity.projectRef}`);
 
 // 4) Controlled-MVP safety gates must stay closed.
 const gateOn = (k) => process.env[k] === 'true';

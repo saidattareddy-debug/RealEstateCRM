@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import type { PoolClient } from 'pg';
 import { bootEmbeddedPg, type BootedPg } from './pg-embedded';
 
 /**
@@ -61,7 +62,7 @@ async function asUser<T>(uid: string, tenant: string, fn: () => Promise<T>): Pro
   }
 }
 function cq(sql: string, params: unknown[] = []) {
-  const c = (asUser as unknown as { _c: import('pg').PoolClient })._c;
+  const c = (asUser as unknown as { _c: PoolClient })._c;
   return c.query(sql, params);
 }
 

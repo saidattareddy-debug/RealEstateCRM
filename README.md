@@ -2,7 +2,7 @@
 
 A multi-tenant, white-labelled **AI lead qualification, scoring and sales automation** platform built exclusively for real-estate sales. It ingests leads from every source, converses with buyers on WhatsApp and website chat in their own language, answers only from approved project data, qualifies and scores leads with an explainable engine, matches buyers to available units, assigns agents, follows up until a site visit is booked, and gives managers a complete operational picture — all from one codebase an agency can sell to many clients.
 
-> **Status: Phase 0 (Architecture & Documentation).** No application code yet. This phase produced the authoritative documentation set in [`/docs`](./docs). Implementation begins at Phase 1 per [`docs/IMPLEMENTATION_PLAN.md`](./docs/IMPLEMENTATION_PLAN.md).
+> **Status:** Phases 0–10 are implemented and locally verified. The repo can produce a repeatable release candidate, but hosted staging sign-off is still required before production approval. See [`docs/BUILD_STATUS.md`](./docs/BUILD_STATUS.md) and [`docs/CONTROLLED_MVP_DEPLOYMENT_AUDIT.md`](./docs/CONTROLLED_MVP_DEPLOYMENT_AUDIT.md).
 
 ## Documentation
 
@@ -31,11 +31,11 @@ Start with [`docs/MASTER_SPEC.md`](./docs/MASTER_SPEC.md) (authoritative), then:
 
 Working rules for contributors/agents: [`CLAUDE.md`](./CLAUDE.md).
 
-## Stack (planned)
+## Stack
 
 Next.js App Router · React · TypeScript (strict) · pnpm · Tailwind · shadcn/ui · Radix · TanStack Table/Query · React Hook Form · Zod · Recharts · next-intl — on **Supabase** (Postgres + RLS + Auth + Storage + Realtime + Edge Functions + PGMQ + pgvector + FTS), with a provider-neutral **AI** layer (Anthropic / OpenAI / Gemini). Hosted on **Vercel**. Versions are pinned in Phase 1.
 
-## Repository layout (target)
+## Repository layout
 
 ```text
 apps/web            Next.js application
@@ -46,4 +46,17 @@ docs/               documentation (this phase)
 
 ## Getting started
 
-Local development setup, environment variables, migrations, and seeding will be documented here and in [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) once the Phase 1 scaffold lands.
+1. `pnpm install`
+2. Copy `.env.example` to `.env.local` and fill the local values
+3. `supabase start`
+4. `supabase db reset`
+5. `pnpm dev`
+
+The repo-root `pnpm dev` and demo CLI commands auto-load the repo-root `.env.local`.
+
+## Production readiness
+
+- Repo-side release gate: `pnpm verify:release-candidate`
+- Environment contract: [`docs/ENVIRONMENT_MATRIX.md`](./docs/ENVIRONMENT_MATRIX.md)
+- Hosted staging execution: [`docs/HOSTED_STAGING_RUNBOOK.md`](./docs/HOSTED_STAGING_RUNBOOK.md)
+- Deployment and rollback guidance: [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md)

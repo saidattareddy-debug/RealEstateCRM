@@ -9,10 +9,12 @@
 import { parseArgs } from './demo/cli.mjs';
 import { createCliAdminClient, resolveTenant } from './demo/admin.mjs';
 import { runIdFor } from './demo/ids.mjs';
+import { loadLocalEnv } from './load-local-env.mjs';
 
 async function main() {
+  const { env } = loadLocalEnv();
   const opts = parseArgs(process.argv.slice(2));
-  const admin = await createCliAdminClient(process.env);
+  const admin = await createCliAdminClient(env);
   const tenant = await resolveTenant(admin, { tenantArg: opts.tenant, allowCreate: false });
   const runId = runIdFor(tenant.id, opts.datasetVersion);
 

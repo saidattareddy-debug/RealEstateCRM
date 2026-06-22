@@ -13,6 +13,7 @@ export default tseslint.config(
       '**/coverage/**',
       'supabase/**',
       'e2e/**',
+      'apps/web/next-env.d.ts',
     ],
   },
   // Node tooling scripts use Node globals.

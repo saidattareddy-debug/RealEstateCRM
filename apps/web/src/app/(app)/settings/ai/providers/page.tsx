@@ -17,7 +17,7 @@ export default async function AiProvidersPage() {
   const supabase = await createSupabaseServerClient();
   const { data } = await supabase
     .from('ai_provider_configs')
-    .select('id, kind, adapter, display_name, secret_ref, base_url, active, available')
+    .select('id, kind, adapter, vendor, display_name, secret_ref, base_url, active, available')
     .eq('tenant_id', ctx.activeTenantId!)
     .order('kind', { ascending: true })
     .order('display_name', { ascending: true });

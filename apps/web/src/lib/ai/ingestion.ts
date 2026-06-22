@@ -9,7 +9,7 @@ import {
 } from '@re/domain';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { writeAudit } from '@/lib/audit/audit-service';
-import { getEmbeddingProvider } from '@/lib/ai/providers';
+import { resolveEmbeddingProvider } from '@/lib/ai/providers';
 import { validateExternalUrl } from '@/lib/ai/url-safety';
 
 /**
@@ -379,8 +379,17 @@ export async function ingestKnowledge(
     {},
   );
 
-  // 11. Embed chunks (mock unless a vetted external adapter is wired).
-  const embedder = getEmbeddingProvider();
+  // 11. Embed chunks using the active tenant-scoped embedding runtime.
+  const embeddingRuntime = await resolveEmbeddingProvider(supabase, tenantId);
+  if (!embeddingRuntime.available) {
+    await failJob(
+      supabase,
+      tenantId,
+      jobId,
+      `embedding_provider_unavailable:${embeddingRuntime.reason ?? 'unknown'}`,
+    );
+    return { ok: false, error: `embedding_provider_unavailable:${embeddingRuntime.reason}` };
+  }
   let embeddings: {
     vector: number[];
     dimensions: number;
@@ -388,14 +397,12 @@ export async function ingestKnowledge(
     development: boolean;
   }[] = [];
   try {
-    embeddings = await embedder.embedDocuments(chunks.map((c) => ({ text: c.text })));
+    embeddings = await embeddingRuntime.provider.embedDocuments(
+      chunks.map((c) => ({ text: c.text })),
+    );
   } catch {
-    embeddings = chunks.map(() => ({
-      vector: [],
-      dimensions: 0,
-      modelVersion: 'unavailable',
-      development: true,
-    }));
+    await failJob(supabase, tenantId, jobId, 'embedding_generation_failed');
+    return { ok: false, error: 'embedding_generation_failed' };
   }
 
   // Resolve the tenant's active embedding-model configuration so every stored
@@ -403,15 +410,8 @@ export async function ingestKnowledge(
   // time). The pgvector `embedding` column is kept in sync by a DB trigger from
   // the jsonb `vector` written here (see migration 0018), so the app stays
   // environment-agnostic and never writes raw vector types itself.
-  const { data: embCfg } = await supabase
-    .from('embedding_model_configs')
-    .select('id, model_name')
-    .eq('active', true)
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  const embConfigId = (embCfg?.id as string | null) ?? null;
-  const embModelName = (embCfg?.model_name as string | null) ?? null;
+  const embConfigId = embeddingRuntime.modelConfigId;
+  const embModelName = embeddingRuntime.modelName;
 
   // 12. Persist chunks + embeddings.
   for (let i = 0; i < chunks.length; i++) {
@@ -462,7 +462,12 @@ export async function ingestKnowledge(
       actorUserId: input.actorUserId,
       entityType: 'knowledge_source',
       entityId: sourceId,
-      metadata: { chunkCount: chunks.length, development: embeddings[0]?.development ?? true },
+      metadata: {
+        chunkCount: chunks.length,
+        development: embeddings[0]?.development ?? true,
+        provider: embeddingRuntime.providerDisplayName,
+        model: embeddingRuntime.modelName,
+      },
     });
   }
 

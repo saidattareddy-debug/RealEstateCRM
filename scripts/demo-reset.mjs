@@ -10,14 +10,16 @@ import { parseArgs, makeAuditWriter } from './demo/cli.mjs';
 import { createCliAdminClient, resolveTenant } from './demo/admin.mjs';
 import { runReset } from './demo/reset.mjs';
 import { runIdFor } from './demo/ids.mjs';
+import { loadLocalEnv } from './load-local-env.mjs';
 
 async function main() {
+  const { env } = loadLocalEnv();
   const opts = parseArgs(process.argv.slice(2));
   if (!opts.dryRun && !opts.confirm) {
     console.error('demo:reset requires --confirm (or use --dry-run to preview).');
     process.exit(2);
   }
-  const admin = await createCliAdminClient(process.env);
+  const admin = await createCliAdminClient(env);
   const tenant = await resolveTenant(admin, { tenantArg: opts.tenant, allowCreate: false });
   const runIdStr = runIdFor(tenant.id, opts.datasetVersion);
 

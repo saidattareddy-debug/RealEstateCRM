@@ -93,4 +93,24 @@ describe('responder send gates', () => {
     expect(d.outcome).toBe('escalate');
     expect(d.blockers).toContain('no_candidate');
   });
+
+  it('respects the explicit policy layer above grounding', () => {
+    const blocked = decideResponderOutcome(
+      allOpen({
+        autoSendPolicyDecision: 'block_send',
+        autoSendPolicyReason: 'do_not_contact',
+      }),
+    );
+    expect(blocked.outcome).toBe('blocked');
+    expect(blocked.blockers).toContain('policy_block_send');
+
+    const review = decideResponderOutcome(
+      allOpen({
+        autoSendPolicyDecision: 'require_human_review',
+        autoSendPolicyReason: 'price_negotiation',
+      }),
+    );
+    expect(review.outcome).toBe('escalate');
+    expect(review.blockers).toContain('policy_requires_human_review');
+  });
 });

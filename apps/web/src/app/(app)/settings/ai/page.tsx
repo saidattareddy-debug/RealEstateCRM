@@ -3,6 +3,11 @@ import { getAppContext, ensurePermission } from '@/lib/auth';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { Panel, StatCard } from '@/components/ui/card';
 import { PermissionDenied } from '@/components/ui/states';
+import {
+  resolveChatProvider,
+  resolveEmbeddingProvider,
+  type ProviderAvailabilityReason,
+} from '@/lib/ai/providers';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,6 +52,15 @@ const SUB_PAGES: { href: string; title: string; description: string }[] = [
   },
 ];
 
+const RUNTIME_REASON_LABELS: Record<ProviderAvailabilityReason, string> = {
+  no_active_model: 'No active model is configured.',
+  no_active_provider: 'No active provider is configured.',
+  provider_inactive: 'The selected provider is inactive.',
+  runtime_flag_off: 'Live provider activation is disabled in the server environment.',
+  secret_missing: 'The configured server credential is missing.',
+  unsupported_vendor: 'The selected vendor is not supported in this slice.',
+};
+
 export default async function AiSettingsPage() {
   const ctx = await getAppContext();
   if (!ensurePermission(ctx, 'ai.settings.read')) {
@@ -54,7 +68,13 @@ export default async function AiSettingsPage() {
   }
 
   const supabase = await createSupabaseServerClient();
-  const [{ data: tenantPolicy }, { data: usage }, { data: providers }] = await Promise.all([
+  const [
+    { data: tenantPolicy },
+    { data: usage },
+    { data: providers },
+    chatRuntime,
+    embeddingRuntime,
+  ] = await Promise.all([
     supabase
       .from('ai_feature_policies')
       .select('operating_level, general_answers_enabled, copilot_enabled, shadow_sample_rate')
@@ -68,9 +88,11 @@ export default async function AiSettingsPage() {
       .maybeSingle(),
     supabase
       .from('ai_provider_configs')
-      .select('id, kind, adapter, display_name, active, available')
+      .select('id, kind, adapter, vendor, display_name, active, available')
       .eq('tenant_id', ctx.activeTenantId!)
       .order('kind', { ascending: true }),
+    resolveChatProvider(supabase, ctx.activeTenantId!),
+    resolveEmbeddingProvider(supabase, ctx.activeTenantId!),
   ]);
 
   const level = (tenantPolicy?.operating_level as string | undefined) ?? 'disabled';
@@ -78,6 +100,7 @@ export default async function AiSettingsPage() {
     id: string;
     kind: string;
     adapter: string;
+    vendor: string;
     display_name: string;
     active: boolean;
     available: boolean;
@@ -131,6 +154,35 @@ export default async function AiSettingsPage() {
         </div>
       </Panel>
 
+      <Panel title="Active runtime">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <StatCard
+            label="Chat runtime"
+            value={chatRuntime.available ? (chatRuntime.usingMock ? 'Mock' : 'Live') : 'Blocked'}
+            hint={
+              chatRuntime.available
+                ? `${chatRuntime.providerDisplayName ?? 'Provider'} · ${chatRuntime.modelName ?? 'No model'}`
+                : RUNTIME_REASON_LABELS[chatRuntime.reason ?? 'no_active_provider']
+            }
+          />
+          <StatCard
+            label="Embedding runtime"
+            value={
+              embeddingRuntime.available
+                ? embeddingRuntime.usingMock
+                  ? 'Mock'
+                  : 'Live'
+                : 'Blocked'
+            }
+            hint={
+              embeddingRuntime.available
+                ? `${embeddingRuntime.providerDisplayName ?? 'Provider'} · ${embeddingRuntime.modelName ?? 'No model'}`
+                : RUNTIME_REASON_LABELS[embeddingRuntime.reason ?? 'no_active_provider']
+            }
+          />
+        </div>
+      </Panel>
+
       <Panel title="Provider availability">
         {providerList.length === 0 ? (
           <p className="text-sm text-text-secondary">No providers configured yet.</p>
@@ -144,6 +196,9 @@ export default async function AiSettingsPage() {
                 </span>
                 <span className="rounded-full bg-border/60 px-2 py-0.5 text-xs text-text-secondary">
                   {p.adapter}
+                </span>
+                <span className="rounded-full bg-border/60 px-2 py-0.5 text-xs text-text-secondary">
+                  {p.vendor}
                 </span>
                 <span className="ml-auto flex items-center gap-2">
                   {p.available ? (
@@ -166,8 +221,9 @@ export default async function AiSettingsPage() {
           </ul>
         )}
         <p className="mt-3 text-xs text-text-secondary">
-          External providers stay unavailable until a server-side credential is wired in. This
-          screen never fakes a connection.
+          Provider configs show whether a matching server credential exists. The active runtime
+          cards above also reflect env-gating and model selection, so a provider can be configured
+          yet still blocked from live draft generation.
         </p>
       </Panel>
 

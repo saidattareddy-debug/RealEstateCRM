@@ -16,6 +16,7 @@
 
 import type { OperatingMode, Lifecycle } from './ai-guard';
 import type { GroundingDecision } from './grounding';
+import type { AiSendPolicyDecision } from './ai-send-policy';
 
 /**
  * The hard live-send gate. Turning this on is a deliberate, reviewed,
@@ -42,7 +43,9 @@ export type ResponderBlocker =
   | 'model_not_configured'
   | 'knowledge_not_approved'
   | 'no_candidate'
-  | 'not_grounded';
+  | 'not_grounded'
+  | 'policy_requires_human_review'
+  | 'policy_block_send';
 
 export interface ResponderContext {
   operatingMode: OperatingMode;
@@ -62,6 +65,9 @@ export interface ResponderContext {
   grounding: GroundingDecision;
   /** Whether a grounded candidate reply was produced. */
   hasCandidate: boolean;
+  /** Future-safe policy layer above grounding/model output. */
+  autoSendPolicyDecision?: AiSendPolicyDecision;
+  autoSendPolicyReason?: string | null;
 }
 
 export interface ResponderDecision {
@@ -128,6 +134,25 @@ export function decideResponderOutcome(ctx: ResponderContext): ResponderDecision
       reason: 'escalate:no_candidate',
       liveSendingEnabled: RESPONDER_LIVE_SENDING,
       blockers: ['no_candidate'],
+      delivered: false,
+    };
+  }
+
+  if (ctx.autoSendPolicyDecision === 'block_send') {
+    return {
+      outcome: 'blocked',
+      reason: `blocked:${ctx.autoSendPolicyReason ?? 'policy_block_send'}`,
+      liveSendingEnabled: RESPONDER_LIVE_SENDING,
+      blockers: ['policy_block_send'],
+      delivered: false,
+    };
+  }
+  if (ctx.autoSendPolicyDecision === 'require_human_review') {
+    return {
+      outcome: 'escalate',
+      reason: `escalate:${ctx.autoSendPolicyReason ?? 'policy_requires_human_review'}`,
+      liveSendingEnabled: RESPONDER_LIVE_SENDING,
+      blockers: ['policy_requires_human_review'],
       delivered: false,
     };
   }

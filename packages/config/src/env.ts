@@ -34,13 +34,10 @@ const serverSchema = z.object({
     .default('false')
     .transform((v) => v === 'true'),
   /**
-   * Phase-7B live-provider activation gate (server-side, default OFF). This is
-   * the OPERATOR half of a two-key system: it expresses an operator's intent to
-   * activate real provider adapters. It can NEVER, on its own, cause an external
-   * send or socket — the real adapters are still inert (see
-   * `LIVE_PROVIDER_ACTIVATION_IMPLEMENTED` in `@re/domain`). Must stay `false`
-   * under the controlled-MVP profile in production (enforced below). Never a
-   * writable browser setting.
+   * Live-provider activation gate (server-side, default OFF). This enables real
+   * server-side AI draft providers when the code path exists and credentials are
+   * configured. It does NOT, by itself, permit customer sending; the live-send
+   * switches remain separately enforced. Never a writable browser setting.
    */
   INTEGRATION_LIVE_PROVIDERS_ENABLED: z
     .enum(['true', 'false'])
@@ -164,13 +161,6 @@ export function checkDeploymentReady(
       problems.push('controlled_mvp production must keep RESPONDER_LIVE_SENDING disabled');
     if (raw.BINARY_MEDIA_RETRIEVAL_ENABLED === 'true')
       problems.push('controlled_mvp production must keep binary media retrieval disabled');
-    if (
-      server.INTEGRATION_LIVE_PROVIDERS_ENABLED ||
-      raw.INTEGRATION_LIVE_PROVIDERS_ENABLED === 'true'
-    )
-      problems.push(
-        'controlled_mvp production must keep INTEGRATION_LIVE_PROVIDERS_ENABLED=false (Phase 7B)',
-      );
   }
 
   // No server secret may be exposed through a browser-visible NEXT_PUBLIC_* var.
@@ -215,10 +205,8 @@ export function deploymentProfile(
 }
 
 /**
- * Phase-7B live-provider activation gate (server-side, default OFF). The OPERATOR
- * half of the two-key activation system: it never, by itself, enables a real send
- * (the real adapters remain inert — see `LIVE_PROVIDER_ACTIVATION_IMPLEMENTED` in
- * `@re/domain`). While false, the registry never returns a live adapter.
+ * Live-provider activation gate (server-side, default OFF). While false, the AI
+ * runtime never returns a live external provider adapter.
  */
 export function liveProviderActivationEnabled(
   env: Record<string, string | undefined> = process.env,

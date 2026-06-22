@@ -9,6 +9,7 @@ export interface ProviderRow {
   id: string;
   kind: 'chat' | 'embedding';
   adapter: 'mock' | 'external';
+  vendor: 'mock' | 'anthropic' | 'openai' | 'gemini';
   display_name: string;
   secret_ref: string | null;
   base_url: string | null;
@@ -86,6 +87,9 @@ function ProviderRowItem({ provider }: { provider: ProviderRow }) {
       <span className="rounded-full bg-border/60 px-2 py-0.5 text-xs text-text-secondary">
         {provider.adapter}
       </span>
+      <span className="rounded-full bg-border/60 px-2 py-0.5 text-xs text-text-secondary">
+        {provider.vendor}
+      </span>
       {provider.secret_ref ? (
         <span className="rounded-full bg-border/60 px-2 py-0.5 font-mono text-xs text-text-secondary">
           env: {provider.secret_ref}
@@ -130,6 +134,7 @@ function CreateProviderForm({ kind }: { kind: 'chat' | 'embedding' }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [adapter, setAdapter] = useState<'mock' | 'external'>('mock');
+  const [vendor, setVendor] = useState<'mock' | 'anthropic' | 'openai' | 'gemini'>('mock');
   const [displayName, setDisplayName] = useState('');
   const [secretRef, setSecretRef] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
@@ -143,6 +148,7 @@ function CreateProviderForm({ kind }: { kind: 'chat' | 'embedding' }) {
     const payload: UpsertProviderInput = {
       kind,
       adapter,
+      vendor,
       displayName,
       secretRef: secretRef.trim().length > 0 ? secretRef.trim() : null,
       baseUrl: baseUrl.trim().length > 0 ? baseUrl.trim() : null,
@@ -157,6 +163,7 @@ function CreateProviderForm({ kind }: { kind: 'chat' | 'embedding' }) {
       setSecretRef('');
       setBaseUrl('');
       setAdapter('mock');
+      setVendor('mock');
       setOk(true);
       router.refresh();
     });
@@ -185,12 +192,35 @@ function CreateProviderForm({ kind }: { kind: 'chat' | 'embedding' }) {
           Adapter
           <select
             value={adapter}
-            onChange={(e) => setAdapter(e.target.value as 'mock' | 'external')}
+            onChange={(e) => {
+              const nextAdapter = e.target.value as 'mock' | 'external';
+              setAdapter(nextAdapter);
+              setVendor(nextAdapter === 'mock' ? 'mock' : kind === 'chat' ? 'anthropic' : 'openai');
+            }}
             disabled={pending}
             className={cn(input, 'w-40')}
           >
             <option value="mock">mock (deterministic)</option>
             <option value="external">external</option>
+          </select>
+        </label>
+        <label className="flex flex-col text-xs text-text-secondary">
+          Vendor
+          <select
+            value={vendor}
+            onChange={(e) =>
+              setVendor(e.target.value as 'mock' | 'anthropic' | 'openai' | 'gemini')
+            }
+            disabled={pending || adapter === 'mock'}
+            className={cn(input, 'w-40')}
+          >
+            {adapter === 'mock' ? <option value="mock">mock</option> : null}
+            {adapter === 'external' && kind === 'chat' ? (
+              <option value="anthropic">anthropic</option>
+            ) : null}
+            {adapter === 'external' && kind === 'embedding' ? (
+              <option value="openai">openai</option>
+            ) : null}
           </select>
         </label>
       </div>
@@ -205,7 +235,7 @@ function CreateProviderForm({ kind }: { kind: 'chat' | 'embedding' }) {
               onChange={(e) => setSecretRef(e.target.value.toUpperCase())}
               maxLength={128}
               disabled={pending}
-              placeholder="e.g. OPENAI_API_KEY"
+              placeholder={kind === 'chat' ? 'e.g. ANTHROPIC_API_KEY' : 'e.g. OPENAI_API_KEY'}
               className={cn(input, 'w-56 font-mono')}
             />
           </label>
@@ -227,7 +257,8 @@ function CreateProviderForm({ kind }: { kind: 'chat' | 'embedding' }) {
       {adapter === 'external' ? (
         <p className="text-xs text-text-secondary">
           Enter only the NAME of a server environment variable — never paste a secret value here.
-          The provider stays unavailable until that env var is set on the server.
+          The provider stays unavailable until that env var is set on the server. This slice uses
+          Anthropic for chat generation and OpenAI for embeddings.
         </p>
       ) : null}
 

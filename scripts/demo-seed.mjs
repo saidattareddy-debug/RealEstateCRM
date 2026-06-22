@@ -19,10 +19,11 @@ import { assertSafe, SafetyError } from './demo/safety.mjs';
 import { parseArgs, makeAuditWriter } from './demo/cli.mjs';
 import { createCliAdminClient, resolveTenant } from './demo/admin.mjs';
 import { runSeed } from './demo/seeder.mjs';
+import { loadLocalEnv } from './load-local-env.mjs';
 
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
-  const env = process.env;
+  const { env } = loadLocalEnv();
 
   // 1) Safety gate — refuse loudly with reasons if anything is unsafe.
   let target;

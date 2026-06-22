@@ -9,7 +9,7 @@ import {
   type SupportedLanguage,
 } from '@re/domain';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { getEmbeddingProvider } from '@/lib/ai/providers';
+import { resolveEmbeddingProvider, type ProviderResolutionStatus } from '@/lib/ai/providers';
 
 /**
  * Knowledge retrieval (Phase 5A §10).
@@ -23,6 +23,7 @@ import { getEmbeddingProvider } from '@/lib/ai/providers';
  */
 
 export interface RetrieveInput {
+  tenantId: string;
   projectId: string | null;
   query: string;
   language: SupportedLanguage;
@@ -51,6 +52,7 @@ export interface RetrieveResult {
   conflicts: { type: string; sourceIds: string[] }[];
   lexicalCount: number;
   vectorCount: number;
+  embeddingStatus: ProviderResolutionStatus;
 }
 
 /** Customer-safe label per source type (never reveals ids). */
@@ -84,12 +86,18 @@ interface ChunkRow {
 }
 
 /** Build the base approved+in-effect+scope-filtered query for chunks. */
-function approvedChunkQuery(supabase: SupabaseClient, projectId: string | null, nowIso: string) {
+function approvedChunkQuery(
+  supabase: SupabaseClient,
+  tenantId: string,
+  projectId: string | null,
+  nowIso: string,
+) {
   let q = supabase
     .from('knowledge_chunks')
     .select(
       'id, source_id, source_version_id, language, trust_priority, content, effective_at, expires_at, created_at',
     )
+    .eq('tenant_id', tenantId)
     .eq('state', 'approved');
   // Project scoping: null project_id = tenant-global knowledge; a project query
   // includes both the project's own and tenant-global sources.
@@ -127,7 +135,7 @@ export async function retrieveKnowledge(
   // --- 1. Lexical (full-text) candidates ----------------------------------
   let lexical: ChunkRow[] = [];
   if (query) {
-    const { data } = await approvedChunkQuery(supabase, input.projectId, nowIso)
+    const { data } = await approvedChunkQuery(supabase, input.tenantId, input.projectId, nowIso)
       .textSearch('content_tsv', query, { type: 'plain', config: 'simple' })
       .limit(Math.max(limit * 4, 32));
     lexical = (data ?? []) as ChunkRow[];
@@ -137,6 +145,7 @@ export async function retrieveKnowledge(
   // recency + as the row universe for vector hits).
   const { data: scopedChunksData } = await approvedChunkQuery(
     supabase,
+    input.tenantId,
     input.projectId,
     nowIso,
   ).limit(400);
@@ -148,20 +157,13 @@ export async function retrieveKnowledge(
   // SAME provider, and call `match_knowledge_chunks` — a SECURITY INVOKER SQL
   // function that filters by model config + matching dimensions under RLS and
   // ranks by similarity in-database. The application NEVER compares vectors.
-  const embedder = getEmbeddingProvider();
-  const { data: modelCfg } = await supabase
-    .from('embedding_model_configs')
-    .select('id, dimensions')
-    .eq('active', true)
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  const modelConfigId = (modelCfg?.id as string | null) ?? null;
+  const embeddingRuntime = await resolveEmbeddingProvider(supabase, input.tenantId);
+  const modelConfigId = embeddingRuntime.modelConfigId;
 
   let vectorScored: { row: ChunkRow; sim: number }[] = [];
   try {
-    const q = await embedder.embedQuery({ text: query || ' ' });
-    const dim = (modelCfg?.dimensions as number | null) ?? q.vector.length;
+    const q = await embeddingRuntime.provider.embedQuery({ text: query || ' ' });
+    const dim = embeddingRuntime.dimensions || q.vector.length;
     if (q.vector.length === dim && q.vector.length > 0) {
       const { data: matches } = await supabase.rpc('match_knowledge_chunks', {
         p_project: input.projectId,
@@ -242,6 +244,7 @@ export async function retrieveKnowledge(
     const { data: srcRows } = await supabase
       .from('knowledge_sources')
       .select('id, title, source_type, trust_priority')
+      .eq('tenant_id', input.tenantId)
       .in('id', sourceIds);
     for (const s of (srcRows ?? []) as Record<string, unknown>[]) {
       const type = String(s.source_type);
@@ -276,6 +279,18 @@ export async function retrieveKnowledge(
     conflicts,
     lexicalCount: lexical.length,
     vectorCount: vectorScored.length,
+    embeddingStatus: {
+      available: embeddingRuntime.available,
+      externalAvailable: embeddingRuntime.externalAvailable,
+      usingMock: embeddingRuntime.usingMock,
+      reason: embeddingRuntime.reason,
+      adapter: embeddingRuntime.adapter,
+      vendor: embeddingRuntime.vendor,
+      providerConfigId: embeddingRuntime.providerConfigId,
+      providerDisplayName: embeddingRuntime.providerDisplayName,
+      modelConfigId: embeddingRuntime.modelConfigId,
+      modelName: embeddingRuntime.modelName,
+    },
   };
 }
 

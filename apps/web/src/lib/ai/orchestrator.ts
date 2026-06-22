@@ -11,6 +11,7 @@ import {
   decideEscalation,
   wrapUntrustedContext,
   estimateCostMicros,
+  normalizeProviderError,
   type AiOperatingLevel,
   type SupportedLanguage,
   type GroundingDecision,
@@ -19,7 +20,7 @@ import {
   type ChatMessage,
 } from '@re/domain';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { getChatProvider, providerAvailability } from '@/lib/ai/providers';
+import { resolveChatProvider } from '@/lib/ai/providers';
 import { retrieveKnowledge, buildGroundingEvidence, type RetrieveResult } from '@/lib/ai/retrieval';
 import { callTool, type ToolResult } from '@/lib/ai/tools';
 
@@ -131,9 +132,14 @@ async function loadUsageLimits(supabase: SupabaseClient, tenantId: string): Prom
 /** Languages with approved native knowledge for this project/tenant. */
 async function availableNativeLanguages(
   supabase: SupabaseClient,
+  tenantId: string,
   projectId: string | null,
 ): Promise<SupportedLanguage[]> {
-  let q = supabase.from('knowledge_sources').select('language').eq('state', 'approved');
+  let q = supabase
+    .from('knowledge_sources')
+    .select('language')
+    .eq('tenant_id', tenantId)
+    .eq('state', 'approved');
   if (projectId) q = q.or(`project_id.eq.${projectId},project_id.is.null`);
   const { data } = await q.limit(500);
   const set = new Set<SupportedLanguage>();
@@ -153,11 +159,11 @@ export async function runAiAnswer(
   const started = Date.now();
   const supabase = supabaseClient ?? (await createSupabaseServerClient());
   const tenantId = input.tenantId;
-  const availability = providerAvailability();
+  const chatRuntime = await resolveChatProvider(supabase, tenantId);
   const providerStatus = {
-    chatExternalAvailable: availability.chat,
-    embeddingExternalAvailable: availability.embedding,
-    usingMock: true,
+    chatExternalAvailable: chatRuntime.externalAvailable,
+    embeddingExternalAvailable: false,
+    usingMock: chatRuntime.usingMock,
   };
 
   // --- 1. Execution gate (never authorises a send) -------------------------
@@ -171,15 +177,15 @@ export async function runAiAnswer(
     consentWithdrawn: false,
     tenantAiEnabled: input.mode !== 'disabled',
     projectAiApproved: true,
-    modelConfigured: true,
+    modelConfigured: chatRuntime.modelConfigId != null,
     knowledgeApproved: true,
     level: input.mode,
-    providerAvailable: true, // mock is always available
+    providerAvailable: chatRuntime.available,
   });
 
   // --- 2. Language routing --------------------------------------------------
   const requested = input.language ?? detectLanguage(input.question);
-  const native = await availableNativeLanguages(supabase, input.projectId);
+  const native = await availableNativeLanguages(supabase, tenantId, input.projectId);
   const langRoute = routeLanguage({
     requested,
     availableNative: native,
@@ -206,6 +212,7 @@ export async function runAiAnswer(
   // --- 4. Retrieval ---------------------------------------------------------
   const retrieval: RetrieveResult = await retrieveKnowledge(
     {
+      tenantId,
       projectId: input.projectId,
       query: input.question,
       language: outputLanguage,
@@ -213,6 +220,8 @@ export async function runAiAnswer(
     },
     supabase,
   );
+  providerStatus.embeddingExternalAvailable = retrieval.embeddingStatus.externalAvailable;
+  providerStatus.usingMock = providerStatus.usingMock || retrieval.embeddingStatus.usingMock;
 
   // --- 5. Dynamic tools (structured project evidence) ----------------------
   const toolResults: ToolResult[] = [];
@@ -249,19 +258,19 @@ export async function runAiAnswer(
   const grounding = decideGrounding(evidence);
 
   // --- 7. Escalation decision ----------------------------------------------
-  const escalation = decideEscalation({
+  let escalation = decideEscalation({
     grounding,
     unsupportedLanguage: !languageSupported,
     providerFailure: false,
   });
 
   // --- 8. Draft (grounded answer) OR escalation note -----------------------
-  const chat = getChatProvider();
   const citations: AiCitation[] = [];
   let draft = '';
   let grounded = false;
   let outputTokens = 0;
   let inputTokens = estInput;
+  const blockers: string[] = [...exec.blockers, ...usage.blocks];
 
   const allowDraft =
     exec.mayGenerateDraft &&
@@ -291,23 +300,48 @@ export async function runAiAnswer(
       role: 'data',
       content: `${contextBlocks}\n${toolContext}`.trim(),
     };
-    const result = await chat.generate({
-      messages: [systemMessage, dataMessage, userMessage],
-      maxOutputTokens: limits.perRequestOutputTokens,
-    });
-    draft = result.text;
-    grounded = true;
-    inputTokens = result.usage.inputTokens;
-    outputTokens = result.usage.outputTokens;
-    // Customer-safe citations from the reranked sources.
-    for (const s of retrieval.sources) {
-      citations.push({
-        claim: 'grounded_in_source',
-        sourceId: s.sourceId,
-        sourceVersionId: s.sourceVersionId,
-        chunkId: retrieval.chunks.find((c) => c.sourceId === s.sourceId)?.chunkId ?? null,
-        customerSafeReference: s.customerSafeReference,
+    try {
+      const result = await chatRuntime.provider.generate({
+        messages: [systemMessage, dataMessage, userMessage],
+        maxOutputTokens: Math.min(
+          limits.perRequestOutputTokens,
+          chatRuntime.maxOutputTokens ?? limits.perRequestOutputTokens,
+        ),
       });
+      draft = result.text;
+      grounded = true;
+      inputTokens = result.usage.inputTokens;
+      outputTokens = result.usage.outputTokens;
+      // Customer-safe citations from the reranked sources.
+      for (const s of retrieval.sources) {
+        citations.push({
+          claim: 'grounded_in_source',
+          sourceId: s.sourceId,
+          sourceVersionId: s.sourceVersionId,
+          chunkId: retrieval.chunks.find((c) => c.sourceId === s.sourceId)?.chunkId ?? null,
+          customerSafeReference: s.customerSafeReference,
+        });
+      }
+    } catch (error) {
+      const providerError = normalizeProviderError({
+        status:
+          typeof error === 'object' && error && 'status' in error
+            ? Number(error.status)
+            : undefined,
+        code:
+          typeof error === 'object' && error && 'code' in error ? String(error.code) : undefined,
+        message:
+          typeof error === 'object' && error && 'message' in error
+            ? String(error.message)
+            : undefined,
+      });
+      blockers.push(providerError.summary);
+      escalation = decideEscalation({
+        grounding,
+        unsupportedLanguage: !languageSupported,
+        providerFailure: true,
+      });
+      draft = `[escalation:${escalation.category}] ${escalation.suggestedAgentAction}`;
     }
   } else {
     // Escalation draft — explicitly NOT a guessed answer.
@@ -352,7 +386,7 @@ export async function runAiAnswer(
     latencyMs: Date.now() - started,
     providerStatus,
     promptVersionId: null,
-    blockers: [...exec.blockers, ...usage.blocks],
+    blockers,
     maySendAutomatically: false,
   };
 }

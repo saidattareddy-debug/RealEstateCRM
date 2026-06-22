@@ -30,20 +30,8 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Migration order
-        run: pnpm verify:migrations
-      - name: Format check
-        run: pnpm format:check
-      - name: Lint
-        run: pnpm lint
-      - name: Typecheck (all workspaces)
-        run: pnpm -r typecheck
-      - name: Unit tests
-        run: pnpm test
-      - name: Production build
-        run: pnpm build
-      - name: Secret scan (no privileged keys committed / in client bundle)
-        run: node scripts/secret-scan.mjs
+      - name: Release candidate gates
+        run: pnpm verify:release-candidate
 
   database:
     name: Supabase migrations + pgTAP (official)

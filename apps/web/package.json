@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.105.0",
     "@re/config": "workspace:*",
     "@re/domain": "workspace:*",
     "@re/ui": "workspace:*",
@@ -19,6 +20,7 @@
     "@supabase/supabase-js": "2.47.10",
     "lucide-react": "0.469.0",
     "next": "15.5.19",
+    "openai": "^6.44.0",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "xlsx": "0.18.5",

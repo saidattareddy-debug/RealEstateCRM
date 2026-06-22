@@ -25,6 +25,7 @@ export * from './ai-language';
 export * from './ai-cost';
 export * from './ai-eval';
 export * from './ai-responder';
+export * from './ai-send-policy';
 export * from './ai-live-send';
 export * from './scoring';
 export * from './matching';

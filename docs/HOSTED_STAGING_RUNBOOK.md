@@ -15,7 +15,7 @@ stays **NO-GO** until every step here passes and a named human signs off (see
 
 ## 0. Preconditions
 
-- Repo at the approved commit; all local gates green (`§15` of the audit).
+- Repo at the approved commit; `pnpm verify:release-candidate` green (`§15` of the audit).
 - Supabase CLI authenticated; access to two **separate** Supabase projects (staging, production).
 - Secrets manager holding distinct secret sets per environment (see `ENVIRONMENT_MATRIX.md`).
 

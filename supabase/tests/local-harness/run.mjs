@@ -84,6 +84,7 @@ try {
     '0028_demo_seed_runs.sql',
     '0029_automations_visits.sql',
     '0030_analytics_admin.sql',
+    '0031_ai_provider_vendor_runtime.sql',
   ]) {
     let s = readFileSync(`${MIG}/${f}`, 'utf8');
     if (f === '0001_extensions.sql')

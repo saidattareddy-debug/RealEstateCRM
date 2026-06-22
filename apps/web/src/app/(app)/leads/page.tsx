@@ -120,7 +120,6 @@ export default async function LeadsPage({
         <div className="flex items-center gap-4 text-sm">
           {canExport ? (
             // Route handler that streams a CSV file (not a page) — a real download link.
-            // eslint-disable-next-line @next/next/no-html-link-for-pages
             <a href="/leads/export" download className="text-forest hover:underline">
               Export CSV
             </a>

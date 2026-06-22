@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import type { PoolClient } from 'pg';
 import { bootEmbeddedPg, type BootedPg } from './pg-embedded';
 
 /**
@@ -23,11 +24,7 @@ const PHASE9_TABLES = [
 
 const q = (sql: string, params: unknown[] = []) => pg.pool.query(sql, params);
 
-async function asUser<T>(
-  uid: string,
-  tenant: string,
-  fn: (c: import('pg').PoolClient) => Promise<T>,
-) {
+async function asUser<T>(uid: string, tenant: string, fn: (c: PoolClient) => Promise<T>) {
   const c = await pg.pool.connect();
   try {
     await c.query('begin');

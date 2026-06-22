@@ -1,10 +1,12 @@
 import EmbeddedPostgres from 'embedded-postgres';
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 
 /**
  * Boots an embedded PostgreSQL, applies the Supabase auth shim + migrations
- * 0001–0025 + seed (the same recipe as `supabase/tests/local-harness/run.mjs`),
+ * 0001–0031 + seed (the same recipe as `supabase/tests/local-harness/run.mjs`),
  * and returns a `pg.Pool` connected as the DB owner (RLS bypassed — mirrors the
  * service-role admin client). Tests run the REAL canonical services against it.
  */
@@ -40,6 +42,7 @@ const MIGRATIONS = [
   '0028_demo_seed_runs.sql',
   '0029_automations_visits.sql',
   '0030_analytics_admin.sql',
+  '0031_ai_provider_vendor_runtime.sql',
 ];
 
 export const SEED_TENANT_A = '11111111-1111-1111-1111-111111111111';
@@ -51,8 +54,8 @@ export interface BootedPg {
 }
 
 export async function bootEmbeddedPg(opts?: { port?: number; dir?: string }): Promise<BootedPg> {
-  const repo = new URL('../../../', import.meta.url).pathname;
-  const mig = repo + 'supabase/migrations';
+  const repo = fileURLToPath(new URL('../../../', import.meta.url));
+  const mig = join(repo, 'supabase', 'migrations');
   const port = opts?.port ?? 5457;
   const dir = opts?.dir ?? '/tmp/pgtest/pgmsg';
 
@@ -102,7 +105,7 @@ export async function bootEmbeddedPg(opts?: { port?: number; dir?: string }): Pr
   await q(`grant usage on schema public,auth,extensions to authenticated,anon;`);
   await q(`grant all on all tables in schema public to authenticated;`);
   await q(`grant execute on all functions in schema public,auth to authenticated,anon;`);
-  await q(readFileSync(`${repo}supabase/seed/seed.sql`, 'utf8'));
+  await q(readFileSync(join(repo, 'supabase', 'seed', 'seed.sql'), 'utf8'));
   await setup.end();
 
   const pool = new pg.Pool({

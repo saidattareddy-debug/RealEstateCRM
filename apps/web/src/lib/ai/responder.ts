@@ -2,7 +2,9 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   decideResponderOutcome,
+  evaluateWebsiteChatAutoSendPolicy,
   RESPONDER_LIVE_SENDING,
+  rolloutStageForOperatingLevel,
   type ResponderDecision,
   type SupportedLanguage,
   type OperatingMode,
@@ -133,6 +135,58 @@ export async function runResponder(
   );
 
   const decision = decideResponderOutcome({
+    autoSendPolicyDecision: 'allow_send',
+    autoSendPolicyReason: null,
+    operatingMode: (conv.operating_mode as OperatingMode | null) ?? 'human',
+    takeoverActive: Boolean(conv.human_takeover_at),
+    lifecycle: (String(conv.status) === 'open' ? 'open' : 'closed') as Lifecycle,
+    dncBlocked: (dncCount ?? 0) > 0,
+    consentWithdrawn,
+    platformAiEnabled: true,
+    tenantAiEnabled: String(tenantPolicy?.operating_level ?? 'disabled') !== 'disabled',
+    projectAiApproved: true,
+    channelPolicyAllows: true,
+    providerAvailable: true,
+    dailyLimitReached: false,
+    modelConfigured: Boolean(embCfg?.id),
+    knowledgeApproved: run.grounded,
+    grounding: run.grounding,
+    hasCandidate: run.grounded,
+  });
+
+  const rolloutStage = rolloutStageForOperatingLevel(
+    (tenantPolicy?.operating_level as 'disabled' | 'shadow' | 'copilot' | 'automatic' | null) ??
+      'disabled',
+  );
+  const policy = evaluateWebsiteChatAutoSendPolicy({
+    rolloutStage,
+    grounded: run.grounding === 'grounded',
+    knowledgeApproved: run.grounded,
+    inventoryFresh: run.grounding !== 'stale_dynamic_data',
+    pricingFresh: run.grounding !== 'stale_dynamic_data',
+    consentAllowed: !consentWithdrawn,
+    dncBlocked: (dncCount ?? 0) > 0,
+    legalOrComplianceRisk: run.grounding === 'policy_blocked',
+    complaintOrSensitiveTone: false,
+    negotiationDetected: false,
+    availabilityCertain: run.grounding !== 'stale_dynamic_data',
+    missingOrConflictingKnowledge:
+      run.grounding === 'conflicting_evidence' ||
+      run.grounding === 'insufficient_evidence' ||
+      run.grounding === 'unsupported_question',
+    crossProjectRisk: false,
+    crossTenantRisk: false,
+    promptInjectionRisk: false,
+    businessHoursAllowed: true,
+    humanReviewRequired: run.grounding === 'human_review_required',
+    confidenceOk: run.grounded,
+    retrievalQualityOk: run.grounded,
+    citationCoverageComplete: run.grounded,
+  });
+
+  const policyAwareDecision = decideResponderOutcome({
+    autoSendPolicyDecision: policy.decision,
+    autoSendPolicyReason: policy.reason,
     operatingMode: (conv.operating_mode as OperatingMode | null) ?? 'human',
     takeoverActive: Boolean(conv.human_takeover_at),
     lifecycle: (String(conv.status) === 'open' ? 'open' : 'closed') as Lifecycle,
@@ -158,15 +212,21 @@ export async function runResponder(
     lead_id: leadId,
     project_id: projectId,
     run_id: run.runId,
-    outcome: decision.outcome, // CHECK forbids 'deliver'
-    reason: decision.reason,
-    candidate_body: decision.outcome === 'suppressed' ? run.draft : null,
-    gates: { blockers: decision.blockers, grounding: run.grounding },
+    outcome: policyAwareDecision.outcome, // CHECK forbids 'deliver'
+    reason: policyAwareDecision.reason,
+    candidate_body: policyAwareDecision.outcome === 'suppressed' ? run.draft : null,
+    gates: {
+      blockers: policyAwareDecision.blockers,
+      grounding: run.grounding,
+      rolloutStage,
+      websiteChatPolicy: policy,
+      prePolicyDecision: decision,
+    },
     correlation_id: run.runId,
   });
 
   // An escalation/blocked decision creates an internal recommendation only.
-  if (decision.outcome === 'escalate' || decision.outcome === 'blocked') {
+  if (policyAwareDecision.outcome === 'escalate' || policyAwareDecision.outcome === 'blocked') {
     await supabase.from('ai_escalation_decisions').insert({
       tenant_id: tenantId,
       run_id: run.runId,
@@ -174,7 +234,7 @@ export async function runResponder(
       lead_id: leadId,
       project_id: projectId,
       category: run.escalation.category,
-      reason: decision.reason,
+      reason: policyAwareDecision.reason,
       suggested_action: run.escalation.suggestedAgentAction,
       priority: run.escalation.priority,
       status: 'open',
@@ -182,5 +242,5 @@ export async function runResponder(
     });
   }
 
-  return { decision, runId: run.runId, recorded: true };
+  return { decision: policyAwareDecision, runId: run.runId, recorded: true };
 }
