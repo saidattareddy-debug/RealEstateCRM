@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+.next/
+dist/
+out/
+*.tsbuildinfo
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+
+# Supabase
+supabase/.branches/
+supabase/.temp/
+
+# Logs / misc
+*.log
+.DS_Store
+coverage/
+.vercel/
+playwright-report/
+test-results/
+
+# Stray pnpm temp artifacts (from sandboxed installs)
+_tmp_*

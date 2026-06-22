@@ -1,0 +1,5 @@
+import { PageSkeleton } from '@/components/ui/states';
+
+export default function AppLoading() {
+  return <PageSkeleton />;
+}

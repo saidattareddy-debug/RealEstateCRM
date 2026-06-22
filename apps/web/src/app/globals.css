@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Design tokens (mirrors @re/ui/tokens.css). Tenant branding overrides
+   --color-forest / --color-champagne etc. at runtime via inline style. */
+:root {
+  --color-bg-app: #f6f4ef;
+  --color-surface: #ffffff;
+  --color-surface-elevated: #fcfbf8;
+  --color-text-primary: #202522;
+  --color-text-secondary: #66706a;
+  --color-forest: #274d3d;
+  --color-forest-deep: #18372b;
+  --color-champagne: #b79257;
+  --color-terracotta: #c95d4b;
+  --color-success: #2f7d5b;
+  --color-warning: #c38a2e;
+  --color-border: #e4e1d9;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+}
+
+.dark {
+  --color-bg-app: #141715;
+  --color-surface: #1b1f1c;
+  --color-surface-elevated: #222724;
+  --color-text-primary: #eceae3;
+  --color-text-secondary: #a2aba4;
+  --color-forest: #5c9b7e;
+  --color-forest-deep: #3e6e58;
+  --color-champagne: #cba877;
+  --color-terracotta: #d9745f;
+  --color-success: #5bb088;
+  --color-warning: #d7a957;
+  --color-border: #2e332f;
+}
+
+body {
+  background-color: var(--color-bg-app);
+  color: var(--color-text-primary);
+}

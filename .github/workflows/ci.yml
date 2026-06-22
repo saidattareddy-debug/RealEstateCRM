@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, staging, production]
+
+# No secrets are referenced in this workflow. Build-time NEXT_PUBLIC_* values are
+# non-secret placeholders for the production build only. Real deployment secrets
+# live in the Vercel/Supabase projects, never in CI YAML. See docs/DEPLOYMENT.md.
+env:
+  APP_ENV: local
+  DEPLOYMENT_MODE: shared
+  NEXT_PUBLIC_APP_URL: http://localhost:3000
+  NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+  SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-service-role-key
+
+jobs:
+  quality:
+    name: Lint / Types / Tests / Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Migration order
+        run: pnpm verify:migrations
+      - name: Format check
+        run: pnpm format:check
+      - name: Lint
+        run: pnpm lint
+      - name: Typecheck (all workspaces)
+        run: pnpm -r typecheck
+      - name: Unit tests
+        run: pnpm test
+      - name: Production build
+        run: pnpm build
+      - name: Secret scan (no privileged keys committed / in client bundle)
+        run: node scripts/secret-scan.mjs
+
+  database:
+    name: Supabase migrations + pgTAP (official)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Start Supabase (Docker)
+        run: supabase start
+      - name: Reset DB from clean state (migrations 0001..NNNN + seed)
+        run: supabase db reset
+      - name: Run pgTAP RLS tests
+        run: supabase test db
+      - name: Stop Supabase
+        if: always()
+        run: supabase stop
+
+  phase-1-1-gate:
+    name: Phase 1.1 final gate (official Supabase result recorded)
+    runs-on: ubuntu-latest
+    needs: [quality, database]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # Fails until supabase/.official-verification.json records a passing run.
+      - name: Verify official Supabase result is recorded
+        run: node scripts/check-official-supabase.mjs

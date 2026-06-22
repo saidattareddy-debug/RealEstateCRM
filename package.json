@@ -1,0 +1,49 @@
+{
+  "name": "re-sales-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "White-label AI real-estate lead qualification, scoring and sales automation platform",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @re/web dev",
+    "build": "pnpm -r --filter @re/web... build",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:reset": "supabase db reset",
+    "db:test": "supabase test db",
+    "verify:migrations": "node scripts/check-migration-order.mjs",
+    "verify:official-supabase": "node scripts/check-official-supabase.mjs",
+    "verify:phase-1-1": "node scripts/check-migration-order.mjs && node scripts/check-official-supabase.mjs",
+    "verify:secrets": "node scripts/secret-scan.mjs",
+    "verify:no-external-io": "node scripts/check-no-external-io.mjs",
+    "test:web": "vitest run --config vitest.web.config.ts",
+    "test:pg": "vitest run --config vitest.pg.config.ts",
+    "db:staging:preflight": "TARGET_ENV=staging node scripts/db-preflight.mjs",
+    "db:production:preflight": "TARGET_ENV=production node scripts/db-preflight.mjs",
+    "hosted:rls": "node scripts/hosted-rls-verification.mjs",
+    "perf:baseline": "node scripts/staging-performance-baseline.mjs",
+    "test:e2e:compile": "tsc -p e2e/tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.17.0",
+    "@next/eslint-plugin-next": "15.1.3",
+    "@types/node": "20.17.10",
+    "@types/pg": "8.15.4",
+    "embedded-postgres": "18.4.0-beta.17",
+    "eslint": "9.17.0",
+    "eslint-config-prettier": "9.1.0",
+    "pg": "8.22.0",
+    "prettier": "3.4.2",
+    "typescript": "5.6.3",
+    "typescript-eslint": "8.18.1",
+    "vitest": "2.1.8",
+    "@playwright/test": "1.49.1"
+  }
+}

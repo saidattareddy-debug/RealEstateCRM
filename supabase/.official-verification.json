@@ -1,0 +1,12 @@
+{
+  "official_supabase_passed": false,
+  "recorded_at": null,
+  "recorded_by": null,
+  "supabase_cli_version": null,
+  "migrations_applied_from_clean_db": false,
+  "pgvector_available": false,
+  "seed_applied": false,
+  "pgtap_passed": false,
+  "pgtap_total": null,
+  "notes": "NOT YET RUN. The agent sandbox has no Docker/Supabase CLI. The repository owner (or CI on a Docker-capable runner) must run the official workflow and record the result here. See docs/DEPLOYMENT.md and scripts/check-official-supabase.mjs."
+}
